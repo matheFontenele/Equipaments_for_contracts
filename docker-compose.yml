@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  app-automacao:
+    build: .
+    container_name: streamlit_automacao_contratos
+    ports:
+      - "8501:8501"
+    environment:
+      - DB_HOST_NEW=host.docker.internal 
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - .:/app
+    restart: unless-stopped

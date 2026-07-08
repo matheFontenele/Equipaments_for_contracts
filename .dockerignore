@@ -1,0 +1,8 @@
+__pycache__/
+.venv/
+venv/
+*.pyc
+.git/
+.env
+equipamentos_banco.csv
+banco_temporario.db

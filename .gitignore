@@ -1,0 +1,56 @@
+# ==========================================
+# DADOS GERADOS PELO SISTEMA (Ignorar sempre)
+# ==========================================
+# Relatórios e caches do banco
+relatorio_banco.csv
+equipamentos_banco.csv
+clientes_banco.csv
+
+# Pasta de travamento e arquivos Parquet
+locks_parquet/
+*.parquet
+
+# ==========================================
+# PLANILHAS BASE (Descomente se NÃO quiser subir para o Git)
+# ==========================================
+# Se essas planilhas tiverem dados reais/sensíveis de clientes, 
+# remova o '#' das duas linhas abaixo para ignorá-las.
+# Contratos.xlsx
+# itens_de_contratos.xlsx
+*.csv
+!relatorio_banco.csv # (Caso queira ignorar todos os CSVs, exceto algum específico)
+
+# ==========================================
+# VARIÁVEIS DE AMBIENTE / SEGURANÇA
+# ==========================================
+.env
+.env.local
+.env.*
+
+# ==========================================
+# PYTHON & AMBIENTE VIRTUAL
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Ambientes Virtuais
+venv/
+env/
+.venv/
+.env/
+
+# ==========================================
+# STREAMLIT & CACHE
+# ==========================================
+.streamlit/
+*.log
+
+# ==========================================
+# IDE E SISTEMA OPERACIONAL (VS Code, Mac, Windows)
+# ==========================================
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
