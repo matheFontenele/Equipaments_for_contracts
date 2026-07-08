@@ -20,10 +20,10 @@ os.makedirs(PASTA_LOCKS, exist_ok=True)
 
 @st.cache_resource
 def obter_conexao_banco():
-    HOST_NOVO = os.getenv("DB_HOST_NEW", "localhost")
+    HOST_NOVO = os.getenv("DB_HOST_NEW", "172.16.200")
     config_legado = {
-        "host": HOST_NOVO, "port": "3307", "db": "aluguel_legado",
-        "user": "root", "pass": "root"
+        "host": HOST_NOVO, "port": "3310", "db": "aluguel_legado",
+        "user": "root", "pass": "1234"
     }
     URL_CONEXAO = f"mysql+pymysql://{config_legado['user']}:{config_legado['pass']}@{config_legado['host']}:{config_legado['port']}/{config_legado['db']}"
     return create_engine(URL_CONEXAO, pool_pre_ping=True)

@@ -5,7 +5,7 @@ services:
     build: .
     container_name: streamlit_automacao_contratos
     ports:
-      - "8501:8501"
+      - "8503:8501"
     environment:
       - DB_HOST_NEW=host.docker.internal 
     extra_hosts:
