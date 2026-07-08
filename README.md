@@ -13,7 +13,8 @@ O fluxo principal da aplicacao e:
 5. Salvar os grupos em `locks_parquet/`, removendo-os temporariamente das tabelas editaveis.
 6. Permitir que um lote seja destravado, devolvendo seus registros para edicao.
 
-Os itens podem ser salvos em Parquet mesmo quando `ITEM_DO_CONTRATO` ainda nao estiver preenchido.
+Os equipamentos podem ser salvos em Parquet mesmo quando `CONTRATO` ou
+`ITEM_DO_CONTRATO` ainda nao estiver preenchido.
 
 ## Requisitos
 
@@ -189,7 +190,8 @@ Se esse arquivo nao existir, as abas de organizacao permanecerao vazias ate a pr
 
 Diretorio: `locks_parquet/`.
 
-Cada arquivo representa os equipamentos de um contrato para um cliente. O nome segue o padrao:
+Cada arquivo representa os equipamentos de um contrato para um cliente. Equipamentos ainda sem
+contrato tambem podem ser salvos e usam `SEMID-SEM-CONTRATO` na identificacao do lote. O nome segue o padrao:
 
 ```text
 <ORGANIZACAO>__C<CONTRACT_ID>-<CONTRATO>__CLI<CLIENTE_ID>-<CLIENTE>.parquet
@@ -270,4 +272,3 @@ Verifique se `Contratos.csv`/`.xlsx` e `itens_de_contratos.csv`/`.xlsx` estao na
 ### Erro ao salvar Parquet
 
 Confirme se o processo possui permissao de escrita em `locks_parquet/` e se as dependencias de `requirements.txt` foram instaladas no mesmo ambiente que executa o Streamlit.
-

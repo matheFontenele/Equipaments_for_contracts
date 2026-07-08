@@ -229,7 +229,7 @@ def travar_grupo(aba, contrato_texto, df_grupo_atual):
         if df_cliente.empty:
             continue
         cliente_nome = df_cliente["CLIENTE_NOME"].iloc[0]
-        contract_id = df_cliente["CONTRACT_ID"].iloc[0] or "SEMID"
+        contract_id = valor_seguro_para_texto(df_cliente["CONTRACT_ID"].iloc[0]) or "SEMID"
 
         df_para_salvar = df_cliente.copy()
         df_para_salvar["ORGAO"] = aba
@@ -502,7 +502,8 @@ for idx_ui, nome_memoria in enumerate(nomes_abas_memoria):
 
         df_aba_atual = df_aba_atual.copy()
         SEM_CONTRATO = "🔓 (SEM CONTRATO DEFINIDO)"
-        df_aba_atual['_GRUPO_CONTRATO'] = df_aba_atual['CONTRATO'].fillna(SEM_CONTRATO)
+        contratos_agrupados = df_aba_atual['CONTRATO'].replace(r'^\s*$', np.nan, regex=True)
+        df_aba_atual['_GRUPO_CONTRATO'] = contratos_agrupados.fillna(SEM_CONTRATO)
 
         grupos = df_aba_atual['_GRUPO_CONTRATO'].unique().tolist()
         grupos_ordenados = sorted(grupos, key=lambda g: (g == SEM_CONTRATO, g))
@@ -540,30 +541,32 @@ for idx_ui, nome_memoria in enumerate(nomes_abas_memoria):
                 partes_editadas.append(df_editado_grupo)
 
                 # ------------------------------------------------------------
-                # 🔒 BOTÃO DE TRAVAMENTO (só disponível para grupos com contrato)
+                # 🔒 BOTÃO DE TRAVAMENTO
                 # ------------------------------------------------------------
-                if grupo != SEM_CONTRATO:
-                    incompletos = df_editado_grupo["ITEM_DO_CONTRATO"].isna().sum()
-                    pode_travar = len(df_editado_grupo) > 0
+                incompletos = df_editado_grupo["ITEM_DO_CONTRATO"].isna().sum()
+                pode_travar = len(df_editado_grupo) > 0
 
-                    col_btn, col_msg = st.columns([1, 4])
-                    with col_btn:
-                        clicou_travar = st.button(
-                            "🔒 Salvar e Travar",
-                            key=f"lock_{nome_memoria}_{slugify_key(grupo)}",
-                            disabled=not pode_travar,
-                            type="primary"
-                        )
-                    with col_msg:
-                        if incompletos > 0:
-                            st.caption(f"ℹ️ {incompletos} equipamento(s) sem ITEM_DO_CONTRATO.")
-                        else:
-                            st.caption("✅ Grupo completo — pronto para ser travado e exportado em Parquet.")
+                col_btn, col_msg = st.columns([1, 4])
+                with col_btn:
+                    clicou_travar = st.button(
+                        "🔒 Salvar e Travar",
+                        key=f"lock_{nome_memoria}_{slugify_key(grupo)}",
+                        disabled=not pode_travar,
+                        type="primary"
+                    )
+                with col_msg:
+                    if grupo == SEM_CONTRATO:
+                        st.caption("ℹ️ Grupo sem contrato — o salvamento em Parquet está liberado.")
+                    elif incompletos > 0:
+                        st.caption(f"ℹ️ {incompletos} equipamento(s) sem ITEM_DO_CONTRATO.")
+                    else:
+                        st.caption("✅ Grupo completo — pronto para ser travado e exportado em Parquet.")
 
-                    if clicou_travar:
-                        qtd_travada = travar_grupo(nome_memoria, grupo, df_editado_grupo)
-                        st.success(f"🔒 {qtd_travada} equipamento(s) travado(s) e salvos em Parquet!")
-                        st.rerun()
+                if clicou_travar:
+                    contrato_arquivo = "SEM CONTRATO" if grupo == SEM_CONTRATO else grupo
+                    qtd_travada = travar_grupo(nome_memoria, contrato_arquivo, df_editado_grupo)
+                    st.success(f"🔒 {qtd_travada} equipamento(s) travado(s) e salvos em Parquet!")
+                    st.rerun()
 
         if algo_mudou:
             df_recombinado = pd.concat(partes_editadas).sort_index()
