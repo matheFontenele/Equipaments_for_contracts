@@ -13,12 +13,9 @@ locks_parquet/
 # ==========================================
 # PLANILHAS BASE (Descomente se NÃO quiser subir para o Git)
 # ==========================================
-# Se essas planilhas tiverem dados reais/sensíveis de clientes, 
-# remova o '#' das duas linhas abaixo para ignorá-las.
-# Contratos.xlsx
-# itens_de_contratos.xlsx
 *.csv
-!relatorio_banco.csv # (Caso queira ignorar todos os CSVs, exceto algum específico)
+!clientes_banco.csv
+!Contratos.csv
 
 # ==========================================
 # VARIÁVEIS DE AMBIENTE / SEGURANÇA
