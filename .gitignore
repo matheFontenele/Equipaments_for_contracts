@@ -16,6 +16,7 @@ locks_parquet/
 *.csv
 !clientes_banco.csv
 !Contratos.csv
+!itens_de_contratos.csv
 
 # ==========================================
 # VARIÁVEIS DE AMBIENTE / SEGURANÇA
