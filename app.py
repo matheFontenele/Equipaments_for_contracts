@@ -8,10 +8,27 @@ import unicodedata
 import numpy as np
 import hashlib
 from datetime import datetime
+from dotenv import load_dotenv
+
+import streamlit as st
+import pandas as pd
+from sqlalchemy import create_engine
+import os
+import re
+import glob
+import unicodedata
+import numpy as np
+import hashlib
+from datetime import datetime
+from dotenv import load_dotenv
 
 # ==============================================================================
-# CONFIGURAÇÕES INICIAIS
+# CONFIGURAÇÕES INICIAIS E VARIÁVEIS DE AMBIENTE
 # ==============================================================================
+# Garante que o arquivo .env seja lido no mesmo diretório do app.py
+_dir_atual = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(_dir_atual, '.env'))
+
 st.set_page_config(page_title="Painel de Equipamentos Alugados", layout="wide")
 
 ARQUIVO_CSV_RELATORIO = "relatorio_banco.csv"
@@ -20,15 +37,14 @@ os.makedirs(PASTA_LOCKS, exist_ok=True)
 
 @st.cache_resource
 def obter_conexao_banco():
-    HOST_NOVO = os.getenv("DB_HOST_NEW", "localhost")
-    config_legado = {
-        "host": HOST_NOVO,
-        "port": os.getenv("DB_PORT", "3307"),
-        "db": os.getenv("DB_DATABASE", "aluguel_legado"),
-        "user": os.getenv("DB_USERNAME", "root"),
-        "pass": os.getenv("DB_PASSWORD", "root")
-    }
-    URL_CONEXAO = f"mysql+pymysql://{config_legado['user']}:{config_legado['pass']}@{config_legado['host']}:{config_legado['port']}/{config_legado['db']}"
+    # Lê as variáveis com valores padrão de segurança (fallback) caso o .env falhe
+    db_host = os.getenv("DB_HOST", "localhost")
+    db_port = os.getenv("DB_PORT", "3306") # Fallback alterado para string "3306" para evitar o erro do int()
+    db_name = os.getenv("DB_DATABASE", "aluguel_legado")
+    db_user = os.getenv("DB_USERNAME", "root")
+    db_pass = os.getenv("DB_PASSWORD", "root")
+
+    URL_CONEXAO = f"mysql+pymysql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
     return create_engine(URL_CONEXAO, pool_pre_ping=True)
 
 def carregar_planilha_local(nome_base):
@@ -82,6 +98,11 @@ def slugify_arquivo(texto, max_len=40):
     texto_norm = texto_norm.replace(" ", "-")
     texto_norm = re.sub(r'[^A-Z0-9\-]', '', texto_norm)
     return texto_norm[:max_len].strip('-') or "SEMNOME"
+
+
+def limpar_filtro(chave):
+    """Limpa um filtro antes de os widgets serem reconstruídos pelo Streamlit."""
+    st.session_state[chave] = ""
 
 # ==============================================================================
 # 🧠 ARQUITETURA SUPER DICIONÁRIO: CONTRATOS -> ITENS
@@ -272,22 +293,39 @@ def destravar_arquivo(caminho, aba):
 def buscar_dados_por_orgao(engine, lista_ids):
     lista_ids_str = ", ".join(str(i) for i in lista_ids)
     query = f"""
-    SELECT
+        SELECT
         alc.id AS id_cliente,
         alc.nome_razao_social AS nome_cliente,
         alq.id AS id_equipamento,
         alq.numero AS tombo,
         alq.nome AS nome_equipamentos,
-        am.orgao_id AS orgao_id
+        am.orgao_id,
+        alq.deleted_at
     FROM aluguel_equipamentos alq
-    INNER JOIN aluguel_movimento_itens ami ON alq.id = ami.equipamento_id
-    INNER JOIN aluguel_movimento am ON ami.movimento_id = am.id
-    INNER JOIN aluguel_clientes alc ON am.cliente_id = alc.id
-    WHERE alq.situacao_id = 1 
-      AND am.orgao_id IN ({lista_ids_str}) 
-      AND am.deleted_at IS NULL
-      AND ami.deleted_at IS NULL 
-      AND alc.deleted_at IS NULL
+    INNER JOIN (
+        SELECT
+            ami.equipamento_id,
+            MAX(am.id) AS ultimo_movimento
+        FROM aluguel_movimento_itens ami
+        INNER JOIN aluguel_movimento am
+            ON am.id = ami.movimento_id
+        WHERE am.deleted_at IS NULL
+        AND ami.deleted_at IS NULL
+        GROUP BY ami.equipamento_id
+    ) ult
+        ON ult.equipamento_id = alq.id
+    INNER JOIN aluguel_movimento am
+        ON am.id = ult.ultimo_movimento
+    INNER JOIN aluguel_movimento_itens ami
+        ON ami.movimento_id = am.id
+    AND ami.equipamento_id = alq.id
+    INNER JOIN aluguel_clientes alc
+        ON alc.id = am.cliente_id
+    WHERE alq.situacao_id = 1
+    AND am.orgao_id IN ({lista_ids_str})
+    AND am.deleted_at IS NULL
+    AND ami.deleted_at IS NULL
+    AND alc.deleted_at IS NULL;
     """
     return pd.read_sql(query, con=engine)
 
@@ -503,19 +541,59 @@ for idx_ui, nome_memoria in enumerate(nomes_abas_memoria):
             st.success("✅ Nenhum item pendente de edição nesta organização.")
             continue
 
-        df_aba_atual = df_aba_atual.copy()
-        SEM_CONTRATO = "🔓 (SEM CONTRATO DEFINIDO)"
-        contratos_agrupados = df_aba_atual['CONTRATO'].replace(r'^\s*$', np.nan, regex=True)
-        df_aba_atual['_GRUPO_CONTRATO'] = contratos_agrupados.fillna(SEM_CONTRATO)
+        # ----------------------------------------------------------------
+        # 🔍 FILTRO POR CLIENTE (nome, ID ou tombo)
+        # ----------------------------------------------------------------
+        chave_filtro = f"filtro_{nome_memoria}"
+        col_filtro, col_limpar = st.columns([5, 1])
+        with col_filtro:
+            termo_busca = st.text_input(
+                "🔍 Filtrar por cliente (nome, ID ou tombo)",
+                key=chave_filtro,
+                placeholder="Digite parte do nome, ID do cliente ou tombo..."
+            )
+        with col_limpar:
+            st.markdown("<div style='height: 1.7em'></div>", unsafe_allow_html=True)
+            st.button(
+                "🧹 Limpar",
+                key=f"limpar_filtro_{nome_memoria}",
+                use_container_width=True,
+                on_click=limpar_filtro,
+                args=(chave_filtro,),
+            )
 
-        grupos = df_aba_atual['_GRUPO_CONTRATO'].unique().tolist()
+        if termo_busca:
+            termo_norm = normalizar(termo_busca)
+            mask_filtro = (
+                df_aba_atual['CLIENTE_NOME'].apply(normalizar).str.contains(termo_norm, na=False, regex=False) |
+                df_aba_atual['CLIENTE_ID'].astype(str).str.contains(termo_busca, na=False, regex=False) |
+                df_aba_atual['TOMBO'].astype(str).str.contains(termo_busca, na=False, regex=False)
+            )
+            df_visivel = df_aba_atual[mask_filtro]
+            st.caption(f"🔎 Mostrando {len(df_visivel)} de {len(df_aba_atual)} equipamento(s) para o filtro '{termo_busca}'.")
+        else:
+            df_visivel = df_aba_atual
+
+        if df_visivel.empty:
+            st.warning("Nenhum equipamento encontrado para este filtro.")
+            continue
+
+        # ----------------------------------------------------------------
+        # AGRUPAMENTO POR CONTRATO (sobre a visão já filtrada)
+        # ----------------------------------------------------------------
+        df_visivel = df_visivel.copy()
+        SEM_CONTRATO = "🔓 (SEM CONTRATO DEFINIDO)"
+        contratos_agrupados = df_visivel['CONTRATO'].replace(r'^\s*$', np.nan, regex=True)
+        df_visivel['_GRUPO_CONTRATO'] = contratos_agrupados.fillna(SEM_CONTRATO)
+
+        grupos = df_visivel['_GRUPO_CONTRATO'].unique().tolist()
         grupos_ordenados = sorted(grupos, key=lambda g: (g == SEM_CONTRATO, g))
 
         partes_editadas = []
         algo_mudou = False
 
         for grupo in grupos_ordenados:
-            df_grupo = df_aba_atual[df_aba_atual['_GRUPO_CONTRATO'] == grupo].drop(columns=['_GRUPO_CONTRATO'])
+            df_grupo = df_visivel[df_visivel['_GRUPO_CONTRATO'] == grupo].drop(columns=['_GRUPO_CONTRATO'])
 
             if grupo == SEM_CONTRATO:
                 opcoes_item_grupo = []
@@ -572,8 +650,9 @@ for idx_ui, nome_memoria in enumerate(nomes_abas_memoria):
                     st.rerun()
 
         if algo_mudou:
-            df_recombinado = pd.concat(partes_editadas).sort_index()
-            df_atualizado = aplicar_automacao_no_dataframe(df_recombinado)
+            df_editado_completo = pd.concat(partes_editadas).sort_index()
+            df_aba_atual.loc[df_editado_completo.index, df_editado_completo.columns] = df_editado_completo
+            df_atualizado = aplicar_automacao_no_dataframe(df_aba_atual)
             st.session_state[nome_memoria] = df_atualizado
             st.rerun()
 
