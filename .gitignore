@@ -6,6 +6,7 @@ relatorio_banco.csv
 equipamentos_banco.csv
 clientes_banco.csv
 .env
+!.env.example
 
 # Pasta de travamento e arquivos Parquet
 locks_parquet/
