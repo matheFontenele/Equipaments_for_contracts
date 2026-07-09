@@ -1,42 +1,70 @@
 # Painel de Automacao de Equipamentos
 
-Aplicacao Streamlit para consultar equipamentos alugados no banco legado, organizar os registros por empresa, relaciona-los a contratos e itens de contrato e salvar lotes validados em arquivos Parquet.
+Aplicacao Streamlit para consultar equipamentos alugados no banco legado, separar os registros por organizacao, vincular contratos e itens de contrato, e salvar lotes validados em arquivos Parquet.
 
 ## Visao geral
 
-O fluxo principal da aplicacao e:
+O app apoia o seguinte fluxo:
 
-1. Carregar as planilhas locais de contratos e itens de contrato.
-2. Consultar no MySQL os equipamentos ativos de cada organizacao configurada.
-3. Separar os equipamentos nas abas `ALUCOM`, `IP SERVICOS`, `MOREIA` e `AS SISTEMAS`.
-4. Permitir a selecao de contrato e, opcionalmente, do item de contrato.
-5. Salvar os grupos em `locks_parquet/`, removendo-os temporariamente das tabelas editaveis.
-6. Permitir que um lote seja destravado, devolvendo seus registros para edicao.
+1. Carregar os cadastros locais de contratos e itens de contrato em `docs/`.
+2. Sincronizar equipamentos ativos do MySQL legado por grupos de orgaos.
+3. Exibir os equipamentos nas abas `ALUCOM`, `IP SERVICOS`, `MOREIA` e `AS SISTEMAS`.
+4. Permitir filtro por cliente, ID ou tombo.
+5. Editar `CONTRATO` e `ITEM_DO_CONTRATO` diretamente na tabela.
+6. Preencher campos derivados como `CONTRACT_ID`, descricao, quantidade e evento a partir do dicionario mestre.
+7. Usar o botao `Auto-Preencher` para sugerir contratos por similaridade e regras simples.
+8. Salvar e travar lotes em `locks_parquet/`, removendo esses equipamentos da fila editavel.
+9. Destravar lotes salvos para devolver os registros a edicao.
 
-Os equipamentos podem ser salvos em Parquet mesmo quando `CONTRATO` ou
-`ITEM_DO_CONTRATO` ainda nao estiver preenchido.
+Equipamentos sem contrato ou sem item tambem podem ser salvos em Parquet. Nesses casos, o lote usa identificadores como `SEMID` e `SEM-CONTRATO` no nome do arquivo.
 
 ## Requisitos
 
-- Docker e Docker Compose; ou
-- Python 3.11 com as dependencias de `requirements.txt`;
-- acesso ao banco MySQL legado;
-- arquivos-base de contratos e itens de contrato no diretorio `docs/`.
+- Python 3.11.
+- Docker e Docker Compose, caso use a execucao em container.
+- Acesso ao banco MySQL legado.
+- Arquivos-base em `docs/Contratos.csv` ou `.xlsx` e `docs/itens_de_contratos.csv` ou `.xlsx`.
+- Dependencias Python de `requirements.txt`.
+- Uma engine Parquet disponivel para o Pandas, como `pyarrow` ou `fastparquet`, para salvar e ler os lotes travados.
 
-O projeto utiliza recursos de abas com carregamento sob demanda. Use uma versao atual do Streamlit; o ambiente atual foi validado com Streamlit 1.59.0.
+## Configuracao
+
+A conexao com o banco e montada em [`core/database.py`](core/database.py) a partir de variaveis de ambiente carregadas do arquivo `.env` na raiz do projeto.
+
+Crie um `.env` com este formato:
+
+```env
+DB_HOST=localhost
+DB_PORT=3307
+DB_DATABASE=aluguel_legado
+DB_USERNAME=root
+DB_PASSWORD=root
+```
+
+Quando o app roda via Docker e o MySQL esta na maquina hospedeira, use:
+
+```env
+DB_HOST=host.docker.internal
+DB_PORT=3307
+DB_DATABASE=aluguel_legado
+DB_USERNAME=root
+DB_PASSWORD=root
+```
+
+O `docker-compose.yml` ja possui `extra_hosts` para resolver `host.docker.internal` em Linux.
+
+Por seguranca, mantenha o `.env` fora do Git e prefira um usuario MySQL com permissoes somente de leitura.
 
 ## Execucao com Docker
 
-O modo recomendado e executar pelo Docker Compose:
-
 ```bash
-docker compose up --build -d
+docker compose up --build
 ```
 
-A aplicacao ficara disponivel em:
+O container executa o Streamlit na porta interna `8501`, publicada no host como:
 
 ```text
-http://localhost:8501
+http://localhost:8503
 ```
 
 Para acompanhar os logs:
@@ -45,7 +73,13 @@ Para acompanhar os logs:
 docker compose logs -f app-automacao
 ```
 
-O volume `.:/app` mantem os CSVs e Parquets no diretorio do projeto, mesmo quando o container e recriado.
+Para parar:
+
+```bash
+docker compose down
+```
+
+O volume `.:/app` mantem os CSVs, o cache em `docs/relatorio_banco.csv` e os Parquets em `locks_parquet/` no diretorio local do projeto.
 
 ## Execucao local
 
@@ -56,56 +90,42 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-Na execucao local, o host padrao do banco e `localhost`.
-
-## Configuracao do banco de dados
-
-A conexao atual e montada em `app.py` com os seguintes valores:
-
-| Configuracao | Valor atual | Como alterar |
-|---|---:|---|
-| Host | `localhost` | Variavel `DB_HOST_NEW` |
-| Porta | `3307` | Alteracao em `app.py` |
-| Banco | `aluguel_legado` | Alteracao em `app.py` |
-| Usuario | `root` | Alteracao em `app.py` |
-| Senha | `root` | Alteracao em `app.py` |
-| Driver | `mysql+pymysql` | Alteracao em `app.py` |
-
-Formato equivalente da URL:
+Na execucao local, o Streamlit normalmente fica disponivel em:
 
 ```text
-mysql+pymysql://root:root@<DB_HOST_NEW>:3307/aluguel_legado
+http://localhost:8501
 ```
 
-No `docker-compose.yml`, `DB_HOST_NEW` recebe `host.docker.internal`. A entrada em `extra_hosts` permite que o container acesse um MySQL executado na maquina hospedeira, inclusive em Linux.
-
-Para apontar para outro servidor:
-
-```yaml
-environment:
-  - DB_HOST_NEW=192.168.1.100
-```
-
-Ou, na execucao local:
+Se precisar apontar para outro banco sem editar o `.env`, exporte as variaveis antes de iniciar:
 
 ```bash
-DB_HOST_NEW=192.168.1.100 streamlit run app.py
+DB_HOST=192.168.1.100 DB_PORT=3307 streamlit run app.py
 ```
 
-> **Seguranca:** usuario e senha estao fixos no codigo. Antes de usar o projeto fora de um ambiente controlado, mova tambem porta, banco, usuario e senha para variaveis de ambiente e utilize um usuario MySQL com permissoes somente de leitura.
+## Como usar
 
-### Estrutura consultada
+1. Coloque os arquivos-base em `docs/`.
+2. Inicie o app.
+3. Clique em `Atualizar Relatorio Base` na barra lateral para consultar o banco e recriar `docs/relatorio_banco.csv`.
+4. Abra a aba da organizacao desejada.
+5. Use o filtro para localizar equipamentos por cliente, ID ou tombo.
+6. Preencha ou revise o contrato e o item de contrato.
+7. Use `Auto-Preencher` quando quiser aplicar as regras de sugestao.
+8. Clique em `Salvar e Travar` para gravar o lote em Parquet.
+9. Use a aba `Itens Travados` para destravar um lote e devolve-lo para edicao.
 
-A sincronizacao le as tabelas:
+## Banco consultado
+
+A sincronizacao le dados das tabelas:
 
 - `aluguel_equipamentos`;
 - `aluguel_movimento_itens`;
 - `aluguel_movimento`;
 - `aluguel_clientes`.
 
-Somente equipamentos com `situacao_id = 1` e registros nao excluidos logicamente sao carregados. A separacao entre empresas utiliza `orgao_id` e os conjuntos definidos em `MAPPINGS`, dentro de `app.py`.
+A consulta considera equipamentos com `situacao_id = 1`, usa o ultimo movimento por equipamento e filtra movimentos, itens de movimento e clientes nao excluidos logicamente. A separacao entre organizacoes usa `orgao_id` e os mapeamentos em [`utils/text_processing.py`](utils/text_processing.py).
 
-Para alterar quais orgaos pertencem a cada empresa, ajuste:
+Para alterar quais orgaos entram em cada aba, ajuste:
 
 ```python
 MAPPING_ALUCOM = {...}
@@ -114,26 +134,23 @@ MAPPING_MOREIA = {...}
 MAPPING_AS = {...}
 ```
 
-## Padrao dos arquivos
+## Arquivos de entrada
 
-Os arquivos CSV/XLSX devem ficar no diretorio `docs/`, exceto os Parquets, que ficam em `locks_parquet/`.
-Por compatibilidade, a aplicacao ainda tenta ler os arquivos-base na raiz caso eles nao existam em `docs/`.
+Os arquivos podem ficar em `docs/` ou, por compatibilidade, na raiz do projeto. Quando houver `.xlsx` e `.csv` com o mesmo nome-base, o `.xlsx` tem prioridade.
 
-### 1. Cadastro de contratos
+### Contratos
 
-Nome aceito, em ordem de prioridade:
+Nomes aceitos:
 
-1. `Contratos.xlsx`;
-2. `Contratos.csv`.
-
-Se os dois existirem, o XLSX sera utilizado. Para CSV, use codificacao UTF-8 e separador por virgula.
+1. `docs/Contratos.xlsx`
+2. `docs/Contratos.csv`
 
 Colunas principais:
 
-| Coluna | Obrigatoria | Finalidade |
+| Coluna | Obrigatoria | Uso |
 |---|---|---|
-| `CONTRATOS` | Sim | Nome exibido para selecao do contrato |
-| `CONTRACT_ID` | Sim | Identificador do contrato |
+| `CONTRATOS` | Sim | Nome exibido no seletor de contratos |
+| `CONTRACT_ID` | Sim | Identificador preenchido automaticamente |
 | `CLIENTE` | Nao | Informacao auxiliar |
 | `ORGANIZACAO` | Nao | Informacao auxiliar |
 | `NUMERO_CONTRATO` | Nao | Informacao auxiliar |
@@ -146,16 +163,16 @@ CONTRATOS,CLIENTE,ORGANIZACAO,NUMERO_CONTRATO,NUMERO_MAIS_CONTRATO,CONTRACT_ID
 ALECE,ASSEMBLEIA LEGISLATIVA DO ESTADO DO CEARA,ALUCOM,97-2025,ALECE - 97-2025,3
 ```
 
-### 2. Cadastro de itens de contrato
+### Itens de contrato
 
-Nome aceito, em ordem de prioridade:
+Nomes aceitos:
 
-1. `itens_de_contratos.xlsx`;
-2. `itens_de_contratos.csv`.
+1. `docs/itens_de_contratos.xlsx`
+2. `docs/itens_de_contratos.csv`
 
-Colunas esperadas:
+Colunas principais:
 
-| Coluna | Obrigatoria | Finalidade |
+| Coluna | Obrigatoria | Uso |
 |---|---|---|
 | `EVENTO` | Sim | Identificador/versao do item |
 | `TIPO_EVENTO` | Nao | Tipo do evento de origem |
@@ -171,28 +188,35 @@ EVENTO,TIPO_EVENTO,CONTRATO,APELIDO,DESCRICAO,QUANTIDADE
 6,CADASTRO,ALECE,NOBREAK 700 VA,UPS MAX SECURITY 700VA 115V,30
 ```
 
-Quando houver mais de um registro com o mesmo contrato e apelido, a aplicacao utiliza o registro de maior `EVENTO`.
+Quando houver mais de um registro para o mesmo contrato e apelido, a aplicacao usa o maior `EVENTO`.
 
-### 3. Relatorio gerado pelo banco
+## Arquivos gerados
 
-Arquivo: `docs/relatorio_banco.csv`.
+### Cache do relatorio do banco
 
-Ele e recriado ao clicar em **Atualizar Relatorio Base** e tambem e usado como cache na inicializacao da aplicacao.
-
-Colunas:
+Arquivo:
 
 ```text
-id_cliente,nome_cliente,id_equipamento,tombo,nome_equipamentos,orgao_id,aba_origem
+docs/relatorio_banco.csv
 ```
 
-Se esse arquivo nao existir, as abas de organizacao permanecerao vazias ate a primeira sincronizacao com o banco.
+Ele e recriado ao clicar em `Atualizar Relatorio Base` e usado como cache na inicializacao. Se nao existir, as abas de organizacao ficam vazias ate a primeira sincronizacao.
 
-### 4. Arquivos Parquet
+Colunas gravadas pelo fluxo atual:
 
-Diretorio: `locks_parquet/`.
+```text
+id_cliente,nome_cliente,id_equipamento,tombo,nome_equipamentos,orgao_id,deleted_at,aba_origem
+```
 
-Cada arquivo representa os equipamentos de um contrato para um cliente. Equipamentos ainda sem
-contrato tambem podem ser salvos e usam `SEMID-SEM-CONTRATO` na identificacao do lote. O nome segue o padrao:
+### Lotes Parquet
+
+Diretorio:
+
+```text
+locks_parquet/
+```
+
+Cada arquivo representa os equipamentos salvos de um cliente dentro de um grupo de contrato. O nome segue o padrao:
 
 ```text
 <ORGANIZACAO>__C<CONTRACT_ID>-<CONTRATO>__CLI<CLIENTE_ID>-<CLIENTE>.parquet
@@ -204,7 +228,7 @@ Exemplo:
 ALUCOM__C197-GOVERNO-MUNICIPAL-DE-URUOCA__CLI868-PMURUOCASECEDU.parquet
 ```
 
-Os trechos textuais do nome sao convertidos para letras maiusculas, sem acentos e sem caracteres especiais. Espacos viram hifens.
+Os trechos textuais sao convertidos para maiusculas, sem acentos, sem caracteres especiais e com espacos trocados por hifens.
 
 Colunas armazenadas:
 
@@ -214,6 +238,7 @@ CLIENTE_NOME
 EQUIPAMENTO_ID
 TOMBO
 EQUIPAMENTO_NOME
+ORGAO_ID
 CONTRACT_ID
 CONTRATO
 ITEM_DO_CONTRATO
@@ -225,52 +250,61 @@ ORGAO
 TRAVADO_EM
 ```
 
-As colunas `ORGAO` e `TRAVADO_EM` sao adicionadas no momento do salvamento. Ao destravar, o arquivo e lido, essas duas colunas de controle sao removidas e o Parquet e excluido.
-
-Enquanto um `EQUIPAMENTO_ID` estiver presente em um Parquet, ele nao aparece novamente na tabela editavel da mesma organizacao.
+Enquanto um `EQUIPAMENTO_ID` estiver presente em um Parquet da organizacao, ele nao aparece na tabela editavel dessa mesma organizacao. Ao destravar, o app le o Parquet, remove `ORGAO` e `TRAVADO_EM`, devolve os dados ao estado da tela e exclui o arquivo.
 
 ## Estrutura do projeto
 
 ```text
 .
-|-- app.py                      # Aplicacao Streamlit
-|-- requirements.txt            # Dependencias Python
-|-- Dockerfile                  # Imagem da aplicacao
-|-- docker-compose.yml          # Execucao e acesso ao host
-|-- docs/
-|   |-- Contratos.csv/.xlsx         # Cadastro local de contratos
-|   |-- itens_de_contratos.csv/.xlsx# Cadastro local de itens
-|   `-- relatorio_banco.csv         # Cache gerado pela sincronizacao
-`-- locks_parquet/              # Lotes salvos/travados
+|-- app.py                      # Entrada Streamlit e composicao das abas
+|-- core/
+|   `-- database.py             # Conexao, leitura dos CSV/XLSX e consulta SQL
+|-- components/
+|   |-- organization_tab.py     # Interface das abas de organizacao
+|   `-- parquet_tab.py          # Interface de lotes travados
+|-- services/
+|   |-- dictionary_service.py   # Dicionario mestre, automacao e sincronizacao
+|   |-- locking_service.py      # Salvamento, leitura e destravamento de Parquets
+|   `-- rules_engine.py         # Regras do Auto-Preencher
+|-- utils/
+|   `-- text_processing.py      # Normalizacao, slugs e mapeamento de orgaos
+|-- docs/                       # Arquivos-base e cache do relatorio
+|-- locks_parquet/              # Lotes travados
+|-- Dockerfile
+|-- docker-compose.yml
+`-- requirements.txt
 ```
 
 ## Persistencia e Git
 
-O `.gitignore` atual ignora arquivos CSV e a pasta `locks_parquet/`. Portanto:
+O `.gitignore` ignora `.env`, `locks_parquet/`, arquivos `.parquet`, caches do banco e CSVs gerados. Os CSVs base com nomes `Contratos.csv`, `itens_de_contratos.csv` e `clientes_banco.csv` sao excecoes e podem ser versionados quando fizer sentido.
 
-- os dados gerados nao devem ser tratados como backup;
-- os arquivos-base em CSV precisam ser fornecidos manualmente em uma nova instalacao;
-- mantenha backup externo dos Parquets enquanto eles forem necessarios;
-- evite versionar planilhas com dados pessoais ou credenciais.
-
-Ao usar Docker, mantenha o volume do projeto montado ou substitua-o por um volume persistente dedicado para nao perder os lotes.
+Mantenha backup externo dos Parquets se eles forem parte do processo operacional, porque a pasta de travas nao deve ser tratada como backup definitivo.
 
 ## Solucao de problemas
 
-### Falha ao conectar ao banco
+### O app abre, mas as abas estao vazias
+
+Confirme se `docs/relatorio_banco.csv` existe ou clique em `Atualizar Relatorio Base` para sincronizar com o banco.
+
+### Falha ao conectar no banco
+
+Verifique se:
+
+- o `.env` existe;
+- `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME` e `DB_PASSWORD` estao corretos;
+- o MySQL aceita conexoes na porta configurada;
+- no Docker, `DB_HOST=host.docker.internal` aponta para a maquina hospedeira;
+- o firewall permite a conexao.
+
+### Arquivos-base nao aparecem
+
+Confira se os nomes sao exatamente `Contratos` e `itens_de_contratos`, com extensao `.csv` ou `.xlsx`, dentro de `docs/` ou na raiz.
+
+### Erro ao salvar ou ler Parquet
 
 Confirme se:
 
-- o MySQL esta acessivel na porta `3307`;
-- o banco `aluguel_legado` existe;
-- as credenciais configuradas estao corretas;
-- `DB_HOST_NEW` aponta para o host correto;
-- o firewall permite a conexao a partir do container.
-
-### Mensagem de arquivos-base ausentes
-
-Verifique se `docs/Contratos.csv`/`.xlsx` e `docs/itens_de_contratos.csv`/`.xlsx` existem e se os nomes respeitam maiusculas, minusculas e sublinhados.
-
-### Erro ao salvar Parquet
-
-Confirme se o processo possui permissao de escrita em `locks_parquet/` e se as dependencias de `requirements.txt` foram instaladas no mesmo ambiente que executa o Streamlit.
+- a pasta `locks_parquet/` existe;
+- o processo tem permissao de escrita nessa pasta;
+- ha uma engine Parquet instalada no mesmo ambiente, como `pyarrow` ou `fastparquet`.

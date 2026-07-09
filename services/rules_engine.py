@@ -1,6 +1,7 @@
 import pandas as pd
 import difflib
 from utils.text_processing import normalizar
+from core.config import IS_KIT
 
 class MotorDeRegras:
     def __init__(self, opcoes_contratos, dict_mestre):
@@ -12,7 +13,7 @@ class MotorDeRegras:
         self.regras = [
             self._regra_contrato_por_similaridade,
             self._regra_contrato_mte
-        ]
+        ] 
 
     def processar_linha(self, row):
         """Função principal que o Pandas vai chamar para cada linha da tabela."""
