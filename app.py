@@ -77,7 +77,7 @@ abas_ui = st.tabs([
 # Renderização das Abas de Organização
 for idx_ui, nome_memoria in enumerate(nomes_abas_memoria):
     with abas_ui[idx_ui]:
-        renderizar_aba_organizacao(nome_memoria, configuracao_colunas_base)
+        renderizar_aba_organizacao(nome_memoria, configuracao_colunas_base, opcoes_contratos)
 
 # Renderização das Abas de Dados Brutos e Parquet
 with abas_ui[4]:

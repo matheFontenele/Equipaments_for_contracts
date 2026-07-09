@@ -4,8 +4,9 @@ import numpy as np
 from utils.text_processing import normalizar, limpar_filtro, slugify_key
 from services.dictionary_service import obter_itens_do_contrato, aplicar_automacao_no_dataframe
 from services.locking_service import obter_ids_travados, travar_grupo
+from services.rules_engine import MotorDeRegras
 
-def renderizar_aba_organizacao(nome_memoria, configuracao_colunas_base):
+def renderizar_aba_organizacao(nome_memoria, configuracao_colunas_base, opcoes_contratos):
     df_aba_atual = st.session_state[nome_memoria]
     qtd_travados = len(obter_ids_travados(nome_memoria))
 
@@ -56,36 +57,65 @@ def renderizar_aba_organizacao(nome_memoria, configuracao_colunas_base):
         titulo_grupo = SEM_CONTRATO if grupo == SEM_CONTRATO else f"📄 {grupo}"
 
         with st.expander(f"{titulo_grupo}  —  {len(df_grupo)} equipamento(s)", expanded=True):
-            config_grupo = dict(configuracao_colunas_base)
-            config_grupo["ITEM_DO_CONTRATO"] = st.column_config.SelectboxColumn("ITEM_DO_CONTRATO", options=opcoes_item_grupo)
+                config_grupo = dict(configuracao_colunas_base)
+                config_grupo["ITEM_DO_CONTRATO"] = st.column_config.SelectboxColumn("ITEM_DO_CONTRATO", options=opcoes_item_grupo)
 
-            df_editado_grupo = st.data_editor(df_grupo, key=f"editor_{nome_memoria}_{slugify_key(grupo)}", num_rows="fixed", use_container_width=True, column_config=config_grupo)
+                df_editado_grupo = st.data_editor(df_grupo, key=f"editor_{nome_memoria}_{slugify_key(grupo)}", num_rows="fixed", use_container_width=True, column_config=config_grupo)
 
-            if not df_editado_grupo.equals(df_grupo):
-                algo_mudou = True
+                if not df_editado_grupo.equals(df_grupo):
+                    algo_mudou = True
 
-            partes_editadas.append(df_editado_grupo)
+                partes_editadas.append(df_editado_grupo)
 
-            incompletos = df_editado_grupo["ITEM_DO_CONTRATO"].isna().sum()
-            col_btn, col_msg = st.columns([1, 4])
-            with col_btn:
-                clicou_travar = st.button("🔒 Salvar e Travar", key=f"lock_{nome_memoria}_{slugify_key(grupo)}", disabled=not (len(df_editado_grupo) > 0), type="primary")
-            with col_msg:
-                if grupo == SEM_CONTRATO:
-                    st.caption("ℹ️ Grupo sem contrato — o salvamento em Parquet está liberado.")
-                elif incompletos > 0:
-                    st.caption(f"ℹ️ {incompletos} equipamento(s) sem ITEM_DO_CONTRATO.")
-                else:
-                    st.caption("✅ Grupo completo — pronto para ser travado.")
+                # ------------------------------------------------------------
+                # 🤖 BOTÕES DE AÇÃO (IA e TRAVAMENTO)
+                # ------------------------------------------------------------
+                incompletos = df_editado_grupo["ITEM_DO_CONTRATO"].isna().sum()
+                pode_travar = len(df_editado_grupo) > 0
 
-            if clicou_travar:
-                contrato_arquivo = "SEM CONTRATO" if grupo == SEM_CONTRATO else grupo
-                qtd_travada = travar_grupo(nome_memoria, contrato_arquivo, df_editado_grupo)
-                st.success(f"🔒 {qtd_travada} equipamento(s) travado(s) e salvos em Parquet!")
-                st.rerun()
+                # Dividimos as colunas para caber o novo botão mágico
+                col_btn_ia, col_btn_lock, col_msg = st.columns([1.5, 1.5, 3])
+                
+                with col_btn_ia:
+                    # O botão só aparece/fica ativo se houver algo para preencher
+                    if incompletos > 0:
+                        clicou_ia = st.button("🪄 Auto-Preencher", key=f"ia_{nome_memoria}_{slugify_key(grupo)}", use_container_width=True)
+                    else:
+                        clicou_ia = False
 
-    if algo_mudou:
-        df_editado_completo = pd.concat(partes_editadas).sort_index()
-        df_aba_atual.loc[df_editado_completo.index, df_editado_completo.columns] = df_editado_completo
-        st.session_state[nome_memoria] = aplicar_automacao_no_dataframe(df_aba_atual)
-        st.rerun()
+                with col_btn_lock:
+                    clicou_travar = st.button("🔒 Salvar e Travar", key=f"lock_{nome_memoria}_{slugify_key(grupo)}", disabled=not pode_travar, type="primary", use_container_width=True)
+                    
+                with col_msg:
+                    if grupo == SEM_CONTRATO:
+                        st.caption("ℹ️ Grupo sem contrato — o salvamento em Parquet está liberado.")
+                    elif incompletos > 0:
+                        st.caption(f"ℹ️ {incompletos} equipamento(s) sem ITEM_DO_CONTRATO.")
+                    else:
+                        st.caption("✅ Grupo completo — pronto para ser travado.")
+
+                # ------------------------------------------------------------
+                # AÇÕES DOS BOTÕES
+                # ------------------------------------------------------------
+                
+                # AÇÃO 1: O Utilizador clicou na IA
+                if clicou_ia:
+                    motor = MotorDeRegras(opcoes_contratos, st.session_state["dict_mestre"])
+                    
+                    # Aplica as regras no dataframe local do grupo
+                    novas_colunas = df_editado_grupo.apply(motor.processar_linha, axis=1)
+                    df_editado_grupo['CONTRATO'] = novas_colunas[0]
+                    df_editado_grupo['ITEM_DO_CONTRATO'] = novas_colunas[1]
+                    
+                    # Salva no estado geral e recarrega a página para mostrar a mágica
+                    df_editado_completo = pd.concat(partes_editadas).sort_index()
+                    df_aba_atual.loc[df_editado_completo.index, df_editado_completo.columns] = df_editado_completo
+                    st.session_state[nome_memoria] = aplicar_automacao_no_dataframe(df_aba_atual)
+                    st.rerun()
+
+                # AÇÃO 2: O Utilizador clicou em Travar
+                if clicou_travar:
+                    contrato_arquivo = "SEM CONTRATO" if grupo == SEM_CONTRATO else grupo
+                    qtd_travada = travar_grupo(nome_memoria, contrato_arquivo, df_editado_grupo)
+                    st.success(f"🔒 {qtd_travada} equipamento(s) travado(s) e salvos em Parquet!")
+                    st.rerun()
