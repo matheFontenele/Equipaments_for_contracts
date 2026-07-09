@@ -1,15 +1,20 @@
-version: '3.8'
-
 services:
   app-automacao:
     build: .
     container_name: streamlit_automacao_contratos
     ports:
       - "8503:8501"
-    environment:
-      - DB_HOST_NEW=host.docker.internal 
+    
+    # 1. INJETA AS VARIÁVEIS DE AMBIENTE DIRETAMENTE DO ARQUIVO
+    env_file:
+      - .env 
+    
+    # 2. GARANTE QUE O CONTÊINER CONSIGA ENXERGAR O BANCO LOCAL (CASO NECESSÁRIO)
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    
+    # 3. ESPELHA O CÓDIGO (PERMITE ATUALIZAR O APP SEM REFAZER O BUILD)
     volumes:
       - .:/app
+      
     restart: unless-stopped

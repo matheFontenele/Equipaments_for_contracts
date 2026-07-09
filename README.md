@@ -21,7 +21,7 @@ Os equipamentos podem ser salvos em Parquet mesmo quando `CONTRATO` ou
 - Docker e Docker Compose; ou
 - Python 3.11 com as dependencias de `requirements.txt`;
 - acesso ao banco MySQL legado;
-- arquivos-base de contratos e itens de contrato no diretorio raiz.
+- arquivos-base de contratos e itens de contrato no diretorio `docs/`.
 
 O projeto utiliza recursos de abas com carregamento sob demanda. Use uma versao atual do Streamlit; o ambiente atual foi validado com Streamlit 1.59.0.
 
@@ -116,7 +116,8 @@ MAPPING_AS = {...}
 
 ## Padrao dos arquivos
 
-Todos os arquivos devem ficar no diretorio raiz do projeto, exceto os Parquets, que ficam em `locks_parquet/`.
+Os arquivos CSV/XLSX devem ficar no diretorio `docs/`, exceto os Parquets, que ficam em `locks_parquet/`.
+Por compatibilidade, a aplicacao ainda tenta ler os arquivos-base na raiz caso eles nao existam em `docs/`.
 
 ### 1. Cadastro de contratos
 
@@ -174,7 +175,7 @@ Quando houver mais de um registro com o mesmo contrato e apelido, a aplicacao ut
 
 ### 3. Relatorio gerado pelo banco
 
-Arquivo: `relatorio_banco.csv`.
+Arquivo: `docs/relatorio_banco.csv`.
 
 Ele e recriado ao clicar em **Atualizar Relatorio Base** e tambem e usado como cache na inicializacao da aplicacao.
 
@@ -236,9 +237,10 @@ Enquanto um `EQUIPAMENTO_ID` estiver presente em um Parquet, ele nao aparece nov
 |-- requirements.txt            # Dependencias Python
 |-- Dockerfile                  # Imagem da aplicacao
 |-- docker-compose.yml          # Execucao e acesso ao host
-|-- Contratos.csv/.xlsx         # Cadastro local de contratos
-|-- itens_de_contratos.csv/.xlsx# Cadastro local de itens
-|-- relatorio_banco.csv         # Cache gerado pela sincronizacao
+|-- docs/
+|   |-- Contratos.csv/.xlsx         # Cadastro local de contratos
+|   |-- itens_de_contratos.csv/.xlsx# Cadastro local de itens
+|   `-- relatorio_banco.csv         # Cache gerado pela sincronizacao
 `-- locks_parquet/              # Lotes salvos/travados
 ```
 
@@ -267,7 +269,7 @@ Confirme se:
 
 ### Mensagem de arquivos-base ausentes
 
-Verifique se `Contratos.csv`/`.xlsx` e `itens_de_contratos.csv`/`.xlsx` estao na raiz e se os nomes respeitam maiusculas, minusculas e sublinhados.
+Verifique se `docs/Contratos.csv`/`.xlsx` e `docs/itens_de_contratos.csv`/`.xlsx` existem e se os nomes respeitam maiusculas, minusculas e sublinhados.
 
 ### Erro ao salvar Parquet
 
