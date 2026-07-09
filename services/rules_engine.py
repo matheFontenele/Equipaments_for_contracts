@@ -1,4 +1,5 @@
 import pandas as pd
+import difflib
 from utils.text_processing import normalizar
 
 class MotorDeRegras:
@@ -9,9 +10,8 @@ class MotorDeRegras:
         # 🧠 O CÉREBRO: Registe aqui as suas regras por ordem de prioridade.
         # O motor vai executar uma por uma de cima para baixo.
         self.regras = [
-            self._regra_contrato_mte,
-            #self._regra_item_estabilizador,
-            #self._regra_item_impressora_color
+            self._regra_contrato_por_similaridade,
+            self._regra_contrato_mte
         ]
 
     def processar_linha(self, row):
@@ -47,29 +47,36 @@ class MotorDeRegras:
                         break
         return contrato, item
 
-    # def _regra_item_estabilizador(self, cliente, equip_nome, contrato, item):
-    #     """Se é um estabilizador e já temos contrato, encontra o item de estabilizador."""
-    #     if pd.notna(contrato) and contrato != "":
-    #         if pd.isna(item) or item == "":
-    #             if "ESTABILIZADOR" in equip_nome or "KVA" in equip_nome:
-    #                 itens_possiveis = self._obter_itens_do_contrato(contrato)
-    #                 # Procura qual item do contrato corresponde a estabilizador
-    #                 item_sugerido = next((i for i in itens_possiveis if "ESTABILIZADOR" in str(i).upper()), None)
-    #                 if item_sugerido:
-    #                     item = item_sugerido
-    #     return contrato, item
+    def _regra_contrato_por_similaridade(self, cliente, equip_nome, contrato, item):
+        """Atrela automaticamente contratos que tenham o nome muito similar ao do cliente"""
+        # Só tenta preencher se o contrato estiver vazio
+        if pd.isna(contrato) or str(contrato).strip() == "":
+            cliente_limpo = str(cliente).upper().strip()
+            
+            melhor_match = None
+            maior_pontuacao = 0.65
 
-    # def _regra_item_impressora_color(self, cliente, equip_nome, contrato, item):
-    #     """Se o equipamento fala em COLOR, procura o item correspondente."""
-    #     if pd.notna(contrato) and contrato != "":
-    #         if pd.isna(item) or item == "":
-    #             if "COLOR" in equip_nome:
-    #                 itens_possiveis = self._obter_itens_do_contrato(contrato)
-    #                 item_sugerido = next((i for i in itens_possiveis if "COLOR" in str(i).upper()), None)
-    #                 if item_sugerido:
-    #                     item = item_sugerido
-    #     return contrato, item
+            for c in self.opcoes_contratos:
+                # Ignoramos opções vazias que usamos para limpar a tela
+                if not c or str(c).strip() == "":
+                    continue
+                    
+                contrato_limpo = str(c).upper().strip()
 
+                # TESTE 1: Substring perfeita
+                if cliente_limpo in contrato_limpo or contrato_limpo in cliente_limpo:
+                    return c, item
+
+                # TESTE 2: Similaridade por erro de digitação
+                similaridade = difflib.SequenceMatcher(None, cliente_limpo, contrato_limpo).ratio()
+                if similaridade > maior_pontuacao:
+                    maior_pontuacao = similaridade
+                    melhor_match = c
+
+            if melhor_match:
+                contrato = melhor_match
+
+        return contrato, item
     # =======================================================================
     # 🔧 MÉTODOS AUXILIARES
     # =======================================================================
