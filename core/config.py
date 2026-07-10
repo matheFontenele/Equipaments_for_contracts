@@ -1,4 +1,68 @@
+# ==============================================================================
+#  LISTA CONTRATOS SIMILARES DE POLICROMATICOS E MONOCROMATICOS
+# ==============================================================================
+CONTRATOS_POLI_MONO = [
+    'HULW',
+    'HUAC',
+    'HUJB',
+    'IFCE CAMOCIM',
+    'IFCE CAUCAIA',
+    'IFCE ITAPIPOCA',
+    'IFCE JUAZEIRO DO NORTE',
+    'IFCE PARACURU',
+    'IFRN CAMPUS NATAL',
+    'BASE ADMINISTRATIVA DO QUARTEL-GENERAL DO EXÉRCITO',
+    'CAPITANIA DOS PORTOS DE SERGIPE',
+    'COLEGIO MILITAR DE SÃO PAULO',
+    'COTER',
+    'DELEGACIA DA CAPITANIA DE SÃO FRANCISCO DO SUL',
+    'ESCOLA DE APRENDIZEM DE MARINHEIROS DO CEARÁ',
+    'INCRA',
+    'MCTI',
+    'MTE',
+    'PCPB',
+    'SETUR',
+    'CENTRO DE LANÇAMENTO DE ALCÂNTARA - CLA',
+    'COLEGIO MILITAR DE SÃO PAULO',
+    'COREN DF',
+    'FUNASA',
+    'COMANDO DA 8º REGIÃO MILITAR',
+    'ESCOLA DE APRENDIZEM DE MARINHEIROS DO CEARÁ',
+    'MT'
+]
+
+# ==============================================================================
+#  LISTA DE BLOQUEIO (CLIENTES IGNORADOS)
+# ==============================================================================
+CLIENTES_IGNORADOS = [
+    "DETRAN - NOVO ORIENTE",
+    "P.M. DE MARCO - SEC.ADM - DETRAN - 215",
+    "P. M. DE MARCO - SEC. DE ADM - DETRAN - 2015" # Adicionado caso haja variação de espaço
+]
+
+# ==============================================================================
+#  DICIONÁRIO DE EXCEÇÕES (DE/PARA)
+# ==============================================================================
+DE_PARA_CLIENTES = {}
+
+# Termos padronizados para substituição pré-análise
+SUBSTITUICOES_TERMOS = {
+    "P. M.": "PREFEITURA MUNICIPAL",
+    "SEC.": "SECRETARIA",
+    "DIR.": "DIRETORIA",
+}
+
+# ==============================================================================
+#  LISTA DE KITS
+# ==============================================================================
 IS_KIT = [
+    'APARELHO AQUECEDOR DE FOLHAS ETUFA SN',
+    'TERMÔMETRO E HIGRÔMETRO COM RELOGIO DIGITAL HTC-1 SN',
+    'MESA PARA TASKALFA',
+    'SUPORTE PARA IMPRESSORAS',
+    'MESA PARA IMPRESSORA',
+    'GABINETE PARA IMPRESSORAS',
+    'PROCESSADOR DE DOCUMENTOS',
     "ESTABILIZADOR",
     "FONTE DE IMPRESSORA",
     "MONITOR",
@@ -33,7 +97,7 @@ IS_KIT = [
     "GRAMPEADOR",
     "FRAGMENTADORA DE PAPEL",
     "LAVADORA DE PRESSAO",
-    "FONTE DE NOTEBOOK",
+    "FONTE DE ",
     "LEITOR BIOMETRICO",
     "DUPLICADOR",
     "GELAGUA",
@@ -131,7 +195,7 @@ IS_KIT = [
     "MESA P/ IMPRESSORA",
     "TESTADOR E LOCALIZADOR DE CABO DE REDE",
     "LEITOR DE CARTAO",
-    "SUPORTE DE NOTEBOOK",
+    "SUPORTE DE ",
     "TRIPE P/ TV",
     "BASTAO DE LED",
     "BANDEJA P/ IMPRESSORA",

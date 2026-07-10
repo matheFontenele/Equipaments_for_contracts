@@ -34,7 +34,6 @@ def renderizar_aba_organizacao(nome_memoria, configuracao_colunas_base, opcoes_c
             df_aba_atual['TOMBO'].astype(str).str.contains(termo_busca, na=False, regex=False)
         )
         df_visivel = df_aba_atual[mask_filtro]
-        st.caption(f"🔎 Mostrando {len(df_visivel)} de {len(df_aba_atual)} equipamento(s) para o filtro '{termo_busca}'.")
     else:
         df_visivel = df_aba_atual
 
@@ -42,21 +41,40 @@ def renderizar_aba_organizacao(nome_memoria, configuracao_colunas_base, opcoes_c
         st.warning("Nenhum equipamento encontrado para este filtro.")
         return
 
-    df_visivel = df_visivel.copy()
-    SEM_CONTRATO = "🔓 (SEM CONTRATO DEFINIDO)"
-    contratos_agrupados = df_visivel['CONTRATO'].replace(r'^\s*$', np.nan, regex=True)
-    df_visivel['_GRUPO_CONTRATO'] = contratos_agrupados.fillna(SEM_CONTRATO)
+    # ----------------------------------------------------------------
+    # 🔍 SEPARAÇÃO COMPONENTE: ITENS REGULARES VS ITENS EXTRAS
+    # ----------------------------------------------------------------
+    if "IS_EXTRA_KIT" in df_visivel.columns:
+        df_extras = df_visivel[df_visivel["IS_EXTRA_KIT"] == True].copy()
+        df_visivel = df_visivel[df_visivel["IS_EXTRA_KIT"] != True].copy()
+    else:
+        df_extras = pd.DataFrame()
 
-    grupos_ordenados = sorted(df_visivel['_GRUPO_CONTRATO'].unique().tolist(), key=lambda g: (g == SEM_CONTRATO, g))
+    if termo_busca and not df_visivel.empty:
+        st.caption(f"🔎 Mostrando {len(df_visivel)} equipamento(s) regulares para o filtro '{termo_busca}'.")
+
+    # ----------------------------------------------------------------
+    # AGRUPAMENTO E RENDERIZAÇÃO DA LISTAGEM PADRÃO
+    # ----------------------------------------------------------------
     partes_editadas = []
     algo_mudou = False
 
-    for grupo in grupos_ordenados:
-        df_grupo = df_visivel[df_visivel['_GRUPO_CONTRATO'] == grupo].drop(columns=['_GRUPO_CONTRATO'])
-        opcoes_item_grupo = [] if grupo == SEM_CONTRATO else obter_itens_do_contrato(grupo)
-        titulo_grupo = SEM_CONTRATO if grupo == SEM_CONTRATO else f"📄 {grupo}"
+    if not df_visivel.empty:
+        df_visivel = df_visivel.copy()
+        SEM_CONTRATO = "🔓 (SEM CONTRATO DEFINIDO)"
+        contratos_agrupados = df_visivel['CONTRATO'].replace(r'^\s*$', np.nan, regex=True)
+        df_visivel['_GRUPO_CONTRATO'] = contratos_agrupados.fillna(SEM_CONTRATO)
 
-        with st.expander(f"{titulo_grupo}  —  {len(df_grupo)} equipamento(s)", expanded=True):
+        grupos_ordenados = sorted(df_visivel['_GRUPO_CONTRATO'].unique().tolist(), key=lambda g: (g == SEM_CONTRATO, g))
+
+        for grupo in grupos_ordenados:
+            df_grupo = df_visivel[df_visivel['_GRUPO_CONTRATO'] == grupo].drop(columns=['_GRUPO_CONTRATO'])
+            
+            # Adicionamos a opção vazia ("") no dropdown dos itens
+            opcoes_item_grupo = [""] if grupo == SEM_CONTRATO else [""] + obter_itens_do_contrato(grupo)
+            titulo_grupo = SEM_CONTRATO if grupo == SEM_CONTRATO else f"📄 {grupo}"
+
+            with st.expander(f"{titulo_grupo}  —  {len(df_grupo)} equipamento(s)", expanded=True):
                 config_grupo = dict(configuracao_colunas_base)
                 config_grupo["ITEM_DO_CONTRATO"] = st.column_config.SelectboxColumn("ITEM_DO_CONTRATO", options=opcoes_item_grupo)
 
@@ -73,11 +91,9 @@ def renderizar_aba_organizacao(nome_memoria, configuracao_colunas_base, opcoes_c
                 incompletos = df_editado_grupo["ITEM_DO_CONTRATO"].isna().sum()
                 pode_travar = len(df_editado_grupo) > 0
 
-                # Dividimos as colunas para caber o novo botão mágico
                 col_btn_ia, col_btn_lock, col_msg = st.columns([1.5, 1.5, 3])
                 
                 with col_btn_ia:
-                    # O botão só aparece/fica ativo se houver algo para preencher
                     if incompletos > 0:
                         clicou_ia = st.button("🪄 Auto-Preencher", key=f"ia_{nome_memoria}_{slugify_key(grupo)}", use_container_width=True)
                     else:
@@ -97,25 +113,50 @@ def renderizar_aba_organizacao(nome_memoria, configuracao_colunas_base, opcoes_c
                 # ------------------------------------------------------------
                 # AÇÕES DOS BOTÕES
                 # ------------------------------------------------------------
-                
-                # AÇÃO 1: O Utilizador clicou na IA
                 if clicou_ia:
                     motor = MotorDeRegras(opcoes_contratos, st.session_state["dict_mestre"])
                     
-                    # Aplica as regras no dataframe local do grupo
                     novas_colunas = df_editado_grupo.apply(motor.processar_linha, axis=1)
                     df_editado_grupo['CONTRATO'] = novas_colunas[0]
                     df_editado_grupo['ITEM_DO_CONTRATO'] = novas_colunas[1]
                     
-                    # Salva no estado geral e recarrega a página para mostrar a mágica
                     df_editado_completo = pd.concat(partes_editadas).sort_index()
                     df_aba_atual.loc[df_editado_completo.index, df_editado_completo.columns] = df_editado_completo
                     st.session_state[nome_memoria] = aplicar_automacao_no_dataframe(df_aba_atual)
                     st.rerun()
 
-                # AÇÃO 2: O Utilizador clicou em Travar
                 if clicou_travar:
                     contrato_arquivo = "SEM CONTRATO" if grupo == SEM_CONTRATO else grupo
                     qtd_travada = travar_grupo(nome_memoria, contrato_arquivo, df_editado_grupo)
                     st.success(f"🔒 {qtd_travada} equipamento(s) travado(s) e salvos em Parquet!")
                     st.rerun()
+
+    # Salva as alterações feitas manualmente na tabela regular
+    if algo_mudou:
+        df_editado_completo = pd.concat(partes_editadas).sort_index()
+        df_aba_atual.loc[df_editado_completo.index, df_editado_completo.columns] = df_editado_completo
+        st.session_state[nome_memoria] = aplicar_automacao_no_dataframe(df_aba_atual)
+        st.rerun()
+
+    # ----------------------------------------------------------------
+    # 📦 PAINEL ISOLADO: EXTRA ITENS (ITENS EXTRAS) - AGORA EDITÁVEL
+    # ----------------------------------------------------------------
+    if not df_extras.empty:
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        st.markdown("### 📦 Extra Itens (Fora do Escopo do Contrato)")
+        st.info("Estes equipamentos pertencem a categorias de Kit (Monitores, Estabilizadores, etc.), porém os contratos selecionados não possuem esses itens previstos em contrato. Você pode editá-los manualmente aqui.")
+        
+        df_extras_exibicao = df_extras.drop(columns=["IS_EXTRA_KIT"], errors="ignore")
+        
+        df_extras_editado = st.data_editor(
+            df_extras_exibicao,
+            key=f"editor_extras_{nome_memoria}",
+            use_container_width=True,
+            column_config=configuracao_colunas_base
+        )
+        
+        # Se o utilizador alterar o contrato ou remover o status de extra
+        if not df_extras_editado.equals(df_extras_exibicao):
+            df_aba_atual.loc[df_extras_editado.index, df_extras_editado.columns] = df_extras_editado
+            st.session_state[nome_memoria] = aplicar_automacao_no_dataframe(df_aba_atual)
+            st.rerun()
