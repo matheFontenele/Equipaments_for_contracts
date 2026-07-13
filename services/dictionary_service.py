@@ -6,66 +6,64 @@ from utils.text_processing import normalizar, valor_seguro_para_texto, MAPPINGS
 from core.database import RELATORIO_BANCO_PATH, buscar_dados_por_orgao
 from services.locking_service import remover_itens_travados
 
-def construir_dicionario_mestre(df_contratos, df_itens):
+def construir_dicionario_mestre(df_banco):
     dict_map = {}
-    if df_contratos.empty:
+    if df_banco is None or df_banco.empty:
         return dict_map
 
-    col_c_nome = "CONTRATOS" if "CONTRATOS" in df_contratos.columns else df_contratos.columns[0]
-    col_c_id = "CONTRACT_ID" if "CONTRACT_ID" in df_contratos.columns else df_contratos.columns[0]
-
-    for _, row in df_contratos.iterrows():
-        c_bruto = row.get(col_c_nome)
-        if pd.isna(c_bruto) or str(c_bruto).strip() == "":
-            continue
-        dict_map[normalizar(c_bruto)] = {"id": valor_seguro_para_texto(row.get(col_c_id)), "itens": {}}
-
-    if df_itens.empty:
-        return dict_map
-
-    col_id_item = df_itens.columns[0]
-    col_cont_item = "CONTRATO" if "CONTRATO" in df_itens.columns else df_itens.columns[2]
-    col_apelido = "APELIDO" if "APELIDO" in df_itens.columns else df_itens.columns[3]
-    col_desc = "DESCRICAO" if "DESCRICAO" in df_itens.columns else df_itens.columns[4]
-    col_qtd = "QUANTIDADE" if "QUANTIDADE" in df_itens.columns else df_itens.columns[5]
-
-    for _, row in df_itens.iterrows():
-        c_bruto = row.get(col_cont_item)
-        i_bruto = row.get(col_apelido)
-        if pd.isna(c_bruto) or pd.isna(i_bruto) or str(c_bruto).strip() == "" or str(i_bruto).strip() == "":
-            continue
-
-        c_norm = normalizar(c_bruto)
-        i_norm = normalizar(i_bruto)
+    for _, row in df_banco.iterrows():
+        # Dados do Contrato
+        contrato_id = row.get('contract_id')
+        contrato_nome = str(row.get('contract_name', '')).strip().upper()
         
-        chave_contrato = next((key for key in dict_map.keys() if key == c_norm or key.startswith(c_norm) or c_norm.startswith(key)), None)
-                
-        if chave_contrato:
-            id_evento_raw = pd.to_numeric(row.get(col_id_item), errors='coerce')
-            id_evento = int(id_evento_raw) if pd.notna(id_evento_raw) else 0
+        # Dados do Item
+        item_id = row.get('contract_item_id')
+        item_nome = str(row.get('contract_item_alias', '')).strip()
 
-            if i_norm not in dict_map[chave_contrato]["itens"] or id_evento > dict_map[chave_contrato]["itens"][i_norm]["evento"]:
-                dict_map[chave_contrato]["itens"][i_norm] = {
-                    "evento": id_evento,
-                    "descricao": valor_seguro_para_texto(row.get(col_desc)),
-                    "quantidade": valor_seguro_para_texto(row.get(col_qtd)),
-                    "apelido_original": str(i_bruto).strip()
-                }
+        if pd.isna(contrato_nome) or contrato_nome == "":
+            continue
+            
+        c_norm = normalizar(contrato_nome)
+        
+        # 1. Cria o nó do Contrato se não existir
+        if c_norm not in dict_map:
+            dict_map[c_norm] = {
+                "id": contrato_id,
+                "nome_original": contrato_nome,
+                "itens": {}
+            }
+            
+        # 2. Adiciona o Item (se existir) atrelado ao Contrato
+        if pd.notna(item_nome) and item_nome != "":
+            i_norm = normalizar(item_nome)
+            dict_map[c_norm]["itens"][i_norm] = {
+                "id": item_id,
+                "apelido_original": item_nome,
+                "quantidade_total": row.get('quantity'),
+                "quantidade_disponivel": row.get('available_quantity')
+            }
+            
     return dict_map
 
 def obter_itens_do_contrato(contrato_bruto):
+    """Retorna os nomes dos itens (apelidos) disponíveis para o dropdown do Streamlit."""
     dict_mestre = st.session_state.get("dict_mestre", {})
     if not dict_mestre or pd.isna(contrato_bruto) or str(contrato_bruto).strip() == "":
         return []
 
     c_norm = normalizar(contrato_bruto)
     chave_contrato = next((key for key in dict_mestre.keys() if key == c_norm or key.startswith(c_norm) or c_norm.startswith(key)), None)
+    
     if not chave_contrato:
         return []
 
     return sorted({item_info["apelido_original"] for item_info in dict_mestre[chave_contrato]["itens"].values()})
 
 def aplicar_automacao_no_dataframe(df_aba):
+    """
+    Valida as escolhas do usuário/IA e preenche as colunas oficiais de ID do banco de dados 
+    (CONTRACT_ID e CONTRACT_ITEM_ID) em tempo real.
+    """
     dict_mestre = st.session_state.get("dict_mestre", {})
     if df_aba is None or df_aba.empty or not dict_mestre:
         return df_aba
@@ -76,36 +74,42 @@ def aplicar_automacao_no_dataframe(df_aba):
         contrato_atual = row.get("CONTRATO")
         item_atual = row.get("ITEM_DO_CONTRATO")
 
+        # Sem contrato? Tudo nulo.
         if pd.isna(contrato_atual) or str(contrato_atual).strip() == "":
-            return pd.Series([None, None, None, None, True])
+            return pd.Series([None, None, True])
 
         c_norm = normalizar(contrato_atual)
         chave_contrato = next((key for key in dict_mestre.keys() if key == c_norm or key.startswith(c_norm) or c_norm.startswith(key)), None)
+        
+        # Contrato digitado não existe no banco? Falha.
         if not chave_contrato:
-            return pd.Series([None, None, None, None, True])
+            return pd.Series([None, None, True])
             
         contract_id = dict_mestre[chave_contrato]["id"]
 
+        # Tem contrato mas não tem item? Retorna só o ID do contrato.
         if pd.isna(item_atual) or str(item_atual).strip() == "" or str(item_atual) == '⬇ selecione um item':
-            return pd.Series([contract_id, None, None, None, False])
+            return pd.Series([contract_id, None, False])
 
         i_norm = normalizar(item_atual)
+        
+        # Item válido? Retorna ID do Contrato e ID do Item.
         if i_norm in dict_mestre[chave_contrato]["itens"]:
-            dados = dict_mestre[chave_contrato]["itens"][i_norm]
-            return pd.Series([contract_id, dados["descricao"], dados["quantidade"], str(dados["evento"]), False])
+            item_id = dict_mestre[chave_contrato]["itens"][i_norm]["id"]
+            return pd.Series([contract_id, item_id, False])
             
-        return pd.Series([contract_id, None, None, None, True])
+        # Falhou na validação do item
+        return pd.Series([contract_id, None, True])
 
     resultados = df_aba.apply(validar_e_preencher, axis=1)
     df_aba["CONTRACT_ID"] = resultados[0]
-    df_aba["DESCRICAO_ITEM"] = resultados[1]
-    df_aba["QUANTIDADE_ITEM_NO_CONTRATO"] = resultados[2]
-    df_aba["ID_EVENTO"] = resultados[3]
+    df_aba["CONTRACT_ITEM_ID"] = resultados[1]
 
-    erros_mask = resultados[4] == True
+    # Limpa as células onde a validação falhou (erros_mask = True)
+    erros_mask = resultados[2] == True
     if erros_mask.sum() > 0:
-        for col in ["ITEM_DO_CONTRATO", "DESCRICAO_ITEM", "QUANTIDADE_ITEM_NO_CONTRATO", "ID_EVENTO"]:
-            df_aba.loc[erros_mask, col] = None
+        df_aba.loc[erros_mask, "ITEM_DO_CONTRATO"] = None
+        df_aba.loc[erros_mask, "CONTRACT_ITEM_ID"] = None
 
     return df_aba
 
@@ -118,8 +122,8 @@ def montar_colunas_base(df_bruto, aba):
     df_montado['EQUIPAMENTO_NOME'] = df_bruto['nome_equipamentos'].apply(valor_seguro_para_texto)
     df_montado['ORGAO_ID'] = df_bruto['orgao_id'].apply(valor_seguro_para_texto)
 
-    colunas_restantes = ["CONTRACT_ID", "CONTRATO", "ITEM_DO_CONTRATO", "DESCRICAO_ITEM",
-                         "QUANTIDADE_ITEM_NO_CONTRATO", "ID_EVENTO", "TIPO_EQUIPAMENTO"]
+    # Substituímos as colunas legadas pelo CONTRACT_ITEM_ID
+    colunas_restantes = ["CONTRACT_ID", "CONTRATO", "CONTRACT_ITEM_ID", "ITEM_DO_CONTRATO", "TIPO_EQUIPAMENTO", "IS_EXTRA_KIT"]
     for col in colunas_restantes:
         df_montado[col] = None
 
@@ -139,10 +143,13 @@ def construir_tabela_organizacao(df_bruto, aba):
     df_montado = remover_itens_travados(df_montado, aba)
     return df_montado
 
-def sincronizar_todas_as_abas(engine):
+def sincronizar_todas_as_abas(engine_legado):
+    """
+    Busca os dados de equipamentos do banco legado e monta as abas do Streamlit.
+    """
     lista_dfs_brutos = []
     for aba, lista_ids in MAPPINGS.items():
-        df_bruto = buscar_dados_por_orgao(engine, lista_ids)
+        df_bruto = buscar_dados_por_orgao(engine_legado, lista_ids)
         df_bruto['aba_origem'] = aba
         lista_dfs_brutos.append(df_bruto)
         st.session_state[aba] = construir_tabela_organizacao(df_bruto, aba)

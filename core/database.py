@@ -14,8 +14,13 @@ DOCS_DIR = BASE_DIR / "docs"
 RELATORIO_BANCO_PATH = DOCS_DIR / "relatorio_banco.csv"
 LEGACY_RELATORIO_BANCO_PATH = BASE_DIR / "relatorio_banco.csv"
 
+# =======================================================================
+# 🗄️ CONEXÕES DE BANCO DE DADOS
+# =======================================================================
+
 @st.cache_resource
-def obter_conexao_banco():
+def obter_conexao_legado():
+    """Conexão com o banco antigo (Origem dos Equipamentos)"""
     db_host = os.getenv("DB_HOST", "localhost")
     db_port = os.getenv("DB_PORT", "3307")
     db_name = os.getenv("DB_DATABASE", "aluguel_legado")
@@ -25,6 +30,23 @@ def obter_conexao_banco():
     URL_CONEXAO = f"mysql+pymysql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
     return create_engine(URL_CONEXAO, pool_pre_ping=True)
 
+@st.cache_resource
+def obter_conexao_novo():
+    """Conexão com o banco novo (Origem dos Contratos e Itens)"""
+    # Usa credenciais específicas se existirem, senão herda as credenciais padrão do legado
+    db_host = os.getenv("DB_HOST_NOVO", os.getenv("DB_HOST", "localhost"))
+    db_port = os.getenv("DB_PORT_NOVO", os.getenv("DB_PORT", "3307"))
+    db_name = os.getenv("DB_DATABASE_NOVO", "controle-interno") # Nome do banco novo
+    db_user = os.getenv("DB_USERNAME_NOVO", os.getenv("DB_USERNAME", "root"))
+    db_pass = os.getenv("DB_PASSWORD_NOVO", os.getenv("DB_PASSWORD", "root"))
+
+    URL_CONEXAO = f"mysql+pymysql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
+    return create_engine(URL_CONEXAO, pool_pre_ping=True)
+
+
+# =======================================================================
+# 📂 FUNÇÕES DE CARREGAMENTO (ARQUIVOS)
+# =======================================================================
 def carregar_planilha_local(nome_base):
     caminhos = [
         DOCS_DIR / f"{nome_base}.xlsx",
@@ -48,7 +70,12 @@ def obter_caminho_relatorio_banco():
         return RELATORIO_BANCO_PATH
     return LEGACY_RELATORIO_BANCO_PATH
 
-def buscar_dados_por_orgao(engine, lista_ids):
+# =======================================================================
+# 🔍 FUNÇÕES DE CONSULTA (QUERIES)
+# =======================================================================
+
+def buscar_dados_por_orgao(engine_legado, lista_ids):
+    """Busca a base de equipamentos ativos no banco LEGADO"""
     lista_ids_str = ", ".join(str(i) for i in lista_ids)
     query = f"""
         SELECT
@@ -85,4 +112,25 @@ def buscar_dados_por_orgao(engine, lista_ids):
     AND ami.deleted_at IS NULL
     AND alc.deleted_at IS NULL;
     """
+    return pd.read_sql(query, con=engine_legado)
+
+def carregar_contratos_do_banco(engine_novo):
+    """Busca os contratos e itens diretamente do banco NOVO"""
+    query = """
+        SELECT
+            cus.id AS customer_id,
+            cus.alias AS cutomer_name,
+            con.id AS contract_id,
+            con.name AS contract_name,
+            coi.id AS contract_item_id,
+            coi.alias AS contract_item_alias,
+            coi.quantity,
+            coi.available_quantity
+        FROM contract_items coi
+        INNER JOIN event_additives ev ON coi.event_additive_id = ev.id
+        INNER JOIN contract_events cov ON ev.event_id = cov.id
+        INNER JOIN contracts con ON cov.contract_id = con.id
+        INNER JOIN customers cus ON con.customer_id = cus.id
+    """
+    return pd.read_sql(query, con=engine_novo)
     return pd.read_sql(query, con=engine)
