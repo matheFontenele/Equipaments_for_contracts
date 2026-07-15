@@ -94,26 +94,46 @@ class MotorDeRegras:
 
     def _regra_contrato_por_similaridade(self, cliente, equip_nome, contrato, item):
         if self._vazio(contrato):
-            cliente_limpo = str(cliente).upper()
+            cliente_limpo = str(cliente).upper().strip()
+            
+            # Limpa o cliente com os De-Para de termos
             for termo_original, substituto in SUBSTITUICOES_TERMOS.items():
                 cliente_limpo = cliente_limpo.replace(termo_original, substituto)
                 
-            cliente_limpo = cliente_limpo.replace('-', ' ').replace('/', ' ')
+            cliente_limpo = cliente_limpo.replace('-', ' ').replace('/', ' ').strip()
             
+            # =================================================================
+            # 🛡️ FILTRO MT (BLINDAGEM ABSOLUTA)
+            # =================================================================
             opcoes_permitidas = []
             for c in self.opcoes_contratos:
                 if self._vazio(c): continue
                 c_upper = str(c).upper().strip()
+                
+                # Se o contrato for o MT, ele NÃO pode ser avaliado pela IA 
+                # a menos que o cliente seja explicitamente o Ministério.
+                # Isso mata o falso positivo de siglas como "SMTT" ou "MATO GROSSO" (MT)
                 if c_upper == "MT" or c_upper.startswith("MT -") or c_upper.startswith("MT "):
-                    if "TRANSPORTE" not in cliente_limpo:
+                    if not ("MINIST" in cliente_limpo and "TRANSPORT" in cliente_limpo):
                         continue 
+                        
                 opcoes_permitidas.append(c)
 
+            # =================================================================
+            # 1. TESTE RÁPIDO: Substring Exata Bidirecional
+            # =================================================================
             for c in opcoes_permitidas:
-                contrato_limpo = str(c).upper().replace('-', ' ').replace('/', ' ')
+                contrato_limpo = str(c).upper().replace('-', ' ').replace('/', ' ').strip()
+                
                 if contrato_limpo in cliente_limpo:
                     return c, item
+                    
+                if len(cliente_limpo) >= 4 and cliente_limpo in contrato_limpo:
+                    return c, item
 
+            # =================================================================
+            # 2. TESTE DE COBERTURA: Fatias de palavras com Cobertura Reversa
+            # =================================================================
             palavras_cliente = set(cliente_limpo.split())
             stop_words = {"DE", "DA", "DO", "DAS", "DOS", "SECRETARIA", "DEPARTAMENTO", "ESTADUAL", "MUNICIPAL", "CONTRATO", "SEC", "ADM", "P", "M"}
             palavras_chave_cliente = palavras_cliente - stop_words
@@ -125,19 +145,27 @@ class MotorDeRegras:
                 contrato_limpo = str(c).upper().replace('-', ' ').replace('/', ' ')
                 palavras_contrato = set(contrato_limpo.split())
                 palavras_chave_contrato = palavras_contrato - stop_words
+                
                 if not palavras_chave_contrato: continue
                 
                 intersecao = palavras_chave_cliente.intersection(palavras_chave_contrato)
+                
                 score_cobertura = len(intersecao) / len(palavras_chave_contrato)
+                score_reverso = len(intersecao) / len(palavras_chave_cliente) if palavras_chave_cliente else 0
+                
+                if score_reverso >= 0.99 and len(intersecao) >= 2:
+                    score_cobertura = 1.0
                 
                 if score_cobertura == 1.0:
                     return c, item
+                    
                 if score_cobertura > 0.7 and score_cobertura > maior_score:
                     maior_score = score_cobertura
                     melhor_match = c
 
             if melhor_match:
                 return melhor_match, item
+                
         return contrato, item
 
     def _regra_item_detran_ma(self, cliente, equip_nome, contrato, item):
