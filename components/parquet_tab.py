@@ -31,7 +31,7 @@ def renderizar_arquivos_parquet():
             arquivo_selecionado = st.selectbox("Escolha o lote para destravar:", options=df_arquivos_parquet["Nome do Arquivo"].tolist(), key="sb_destravar_parquet")
         with col_btn:
             st.markdown("<br>", unsafe_allow_html=True)
-            if st.button("🔓 Destravar Lote", type="secondary", use_container_width=True):
+            if st.button("🔓 Destravar Lote", type="secondary", width="stretch"):
                 linha_arq = df_arquivos_parquet[df_arquivos_parquet["Nome do Arquivo"] == arquivo_selecionado].iloc[0]
                 destravar_arquivo(linha_arq["caminho_completo"], linha_arq["Organização"])
                 st.rerun()

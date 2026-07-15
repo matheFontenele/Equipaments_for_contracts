@@ -96,12 +96,12 @@ for idx_ui, nome_memoria in enumerate(nomes_abas_memoria):
 # Tab 4: Tabela com o resultado da Query do banco novo
 with abas_ui[4]:
     st.info("💡 Dados carregados dinamicamente via JOIN do Banco Novo.")
-    st.dataframe(st.session_state["df_contratos_banco"], use_container_width=True, height=700)
+    st.dataframe(st.session_state["df_contratos_banco"], width="stretch", height=700)
 
 # Tab 5: Base de Equipamentos e Órgãos (Banco Legado)
 with abas_ui[5]:
     st.info("💡 Snapshot local (CSV) de equipamentos puxado do Banco Legado.")
-    st.dataframe(st.session_state["df_relatorio"], use_container_width=True, height=700)
+    st.dataframe(st.session_state["df_relatorio"], width="stretch", height=700)
 
 # Tab 6: Gestor de Arquivos Parquet Travados
 with abas_ui[6]:

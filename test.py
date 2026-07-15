@@ -1,162 +1,117 @@
-import streamlit as st
 import pandas as pd
-import numpy as np
-from utils.text_processing import normalizar, limpar_filtro, slugify_key
-from services.dictionary_service import obter_itens_do_contrato, aplicar_automacao_no_dataframe
-from services.locking_service import obter_ids_travados, travar_grupo
-from services.rules_engine import MotorDeRegras
+from rapidfuzz import fuzz
+from utils.text_processing import normalizar
+from core.config import IS_KIT, DE_PARA_CLIENTES, CLIENTES_IGNORADOS, SUBSTITUICOES_TERMOS, CONTRATOS_POLI_MONO
 
-def renderizar_aba_organizacao(nome_memoria, configuracao_colunas_base, opcoes_contratos):
-    df_aba_atual = st.session_state[nome_memoria]
-    qtd_travados = len(obter_ids_travados(nome_memoria))
+class MotorDeRegras:
+    def __init__(self, opcoes_contratos, dict_mestre):
+        self.opcoes_contratos = opcoes_contratos
+        self.dict_mestre = dict_mestre
+        
+        # 🧠 O CÉREBRO
+        self.regras = [
+            self._regra_de_para_explicito,         # 1º: Valida se está forçado no DE/PARA
+            self._regra_contrato_mte,              # 2º: Regra estática do MTE
+            self._regra_contrato_mt,               # 3º: Regra estática do MT
+            self._regra_contrato_por_similaridade, # 4º: Motor de Contratos Inteligente
+            self._regra_item_detran_ma,            # 5º: Regras específicas de Itens
+            self._regra_itens_poli_mono,           # 6º: Triagem Impressoras
+            self._regra_item_por_similaridade      # 7º: NOVO! Motor Universal de Itens via IA
+        ] 
 
-    if qtd_travados > 0:
-        st.info(f"🔒 {qtd_travados} equipamento(s) já travado(s) — veja a aba 'Itens Travados'.")
+    def processar_linha(self, row):
+        contrato_atual = row.get('CONTRATO')
+        item_atual = row.get('ITEM_DO_CONTRATO')
+        cliente = str(row.get('CLIENTE_NOME', '')).upper()
+        equip_nome = str(row.get('EQUIPAMENTO_NOME', '')).upper()
 
-    if df_aba_atual.empty:
-        st.success("✅ Nenhum item pendente de edição nesta organização.")
-        return
+        # =================================================================
+        # 1. 🚫 ESCUDO DA BLACKLIST (Entrada)
+        # =================================================================
+        cliente_tratado = cliente.strip()
+        for ignorado in CLIENTES_IGNORADOS:
+            if ignorado in cliente_tratado or cliente_tratado in ignorado:
+                return pd.Series([None, None])
 
-    # Painel de Filtros de pesquisa rápida
-    chave_filtro = f"filtro_{nome_memoria}"
-    col_filtro, col_limpar = st.columns([5, 1])
-    with col_filtro:
-        termo_busca = st.text_input("🔍 Filtrar por cliente (nome, ID ou tombo)", key=chave_filtro, placeholder="Digite parte do nome, ID do cliente ou tombo...")
-    with col_limpar:
-        st.markdown("<div style='height: 1.7em'></div>", unsafe_allow_html=True)
-        st.button("🧹 Limpar", key=f"btn_limpar_{nome_memoria}", use_container_width=True, on_click=limpar_filtro, args=(chave_filtro,))
+        # =================================================================
+        # 2. MOTOR DE REGRAS (Tenta descobrir Contrato e Item)
+        # =================================================================
+        for regra in self.regras:
+            if pd.notna(contrato_atual) and str(contrato_atual).strip() != "" and \
+               pd.notna(item_atual) and str(item_atual).strip() != "":
+                break
+            contrato_atual, item_atual = regra(cliente, equip_nome, contrato_atual, item_atual)
 
-    if termo_busca:
-        termo_norm = normalizar(termo_busca)
-        mask_filtro = (
-            df_aba_atual['CLIENTE_NOME'].apply(normalizar).str.contains(termo_norm, na=False, regex=False) |
-            df_aba_atual['CLIENTE_ID'].astype(str).str.contains(termo_busca, na=False, regex=False) |
-            df_aba_atual['TOMBO'].astype(str).str.contains(termo_busca, na=False, regex=False)
-        )
-        df_visivel = df_aba_atual[mask_filtro]
-    else:
-        df_visivel = df_aba_atual
+        # =================================================================
+        # 3. 🛡️ ESCUDO DE KITS (Saída / Pós-Processamento)
+        # =================================================================
+        # Se depois de passar por todas as regras o equipamento ainda for suspeito de ser KIT...
+        is_kit = any(str(cat).upper() in equip_nome for cat in IS_KIT)
+        
+        if is_kit:
+            # Se o nosso motor universal de itens (RapidFuzz) conseguiu achar um item 
+            # oficial no contrato, nós damos o SALVO-CONDUTO!
+            if pd.notna(item_atual) and str(item_atual).strip() != "":
+                pass 
+            else:
+                # É kit (ex: teclado) e não achou item oficial faturável no contrato? Ejeta!
+                return pd.Series([None, None])
 
-    if df_visivel.empty:
-        st.warning("Nenhum equipamento encontrado para este filtro.")
-        return
+        return pd.Series([contrato_atual, item_atual])
 
-    # ----------------------------------------------------------------
-    # 🔍 SEPARAÇÃO COMPONENTE: ITENS REGULARES VS ITENS EXTRAS
-    # ----------------------------------------------------------------
-    if "IS_EXTRA_KIT" in df_visivel.columns:
-        df_extras = df_visivel[df_visivel["IS_EXTRA_KIT"] == True].copy()
-        df_visivel = df_visivel[df_visivel["IS_EXTRA_KIT"] != True].copy()
-    else:
-        df_extras = pd.DataFrame()
+    # =======================================================================
+    # 📚 BIBLIOTECA DE REGRAS
+    # =======================================================================
 
-    if termo_busca and not df_visivel.empty:
-        st.caption(f"🔎 Mostrando {len(df_visivel)} equipamento(s) regulares para o filtro '{termo_busca}'.")
+    # ... [MANTENHA AQUI AS REGRAS QUE VOCÊ JÁ TEM: _regra_de_para_explicito, MTE, MT, Similaridade, Detran_MA, Poli_Mono] ...
+    
+    # Adicione a nova regra UNIVERSAL de itens logo abaixo da regra das Mono/Poli:
 
-    # ----------------------------------------------------------------
-    # AGRUPAMENTO E RENDERIZAÇÃO DA LISTAGEM PADRÃO
-    # ----------------------------------------------------------------
-    partes_editadas = []
-    algo_mudou = False
-
-    if not df_visivel.empty:
-        df_visivel = df_visivel.copy()
-        SEM_CONTRATO = "🔓 (SEM CONTRATO DEFINIDO)"
-        contratos_agrupados = df_visivel['CONTRATO'].replace(r'^\s*$', np.nan, regex=True)
-        df_visivel['_GRUPO_CONTRATO'] = contratos_agrupados.fillna(SEM_CONTRATO)
-
-        grupos_ordenados = sorted(df_visivel['_GRUPO_CONTRATO'].unique().tolist(), key=lambda g: (g == SEM_CONTRATO, g))
-
-        for grupo in grupos_ordenados:
-            df_grupo = df_visivel[df_visivel['_GRUPO_CONTRATO'] == grupo].drop(columns=['_GRUPO_CONTRATO'])
-            
-            # Adicionamos a opção vazia ("") no dropdown dos itens
-            opcoes_item_grupo = [""] if grupo == SEM_CONTRATO else [""] + obter_itens_do_contrato(grupo)
-            titulo_grupo = SEM_CONTRATO if grupo == SEM_CONTRATO else f"📄 {grupo}"
-
-            with st.expander(f"{titulo_grupo}  —  {len(df_grupo)} equipamento(s)", expanded=True):
-                config_grupo = dict(configuracao_colunas_base)
-                config_grupo["ITEM_DO_CONTRATO"] = st.column_config.SelectboxColumn("ITEM_DO_CONTRATO", options=opcoes_item_grupo)
-
-                df_editado_grupo = st.data_editor(df_grupo, key=f"editor_{nome_memoria}_{slugify_key(grupo)}", num_rows="fixed", use_container_width=True, column_config=config_grupo)
-
-                if not df_editado_grupo.equals(df_grupo):
-                    algo_mudou = True
-
-                partes_editadas.append(df_editado_grupo)
-
-                # ------------------------------------------------------------
-                # 🤖 BOTÕES DE AÇÃO (IA e TRAVAMENTO)
-                # ------------------------------------------------------------
-                incompletos = df_editado_grupo["ITEM_DO_CONTRATO"].isna().sum()
-                pode_travar = len(df_editado_grupo) > 0
-
-                col_btn_ia, col_btn_lock, col_msg = st.columns([1.5, 1.5, 3])
+    def _regra_item_por_similaridade(self, cliente, equip_nome, contrato, item):
+        """Regra Universal: Associa o equipamento ao item do contrato via IA (Fuzzy Matching)"""
+        # Só tenta preencher se o contrato já estiver preenchido e o item ainda vazio
+        if pd.notna(contrato) and str(contrato).strip() != "":
+            if pd.isna(item) or str(item).strip() == "":
                 
-                with col_btn_ia:
-                    if incompletos > 0:
-                        clicou_ia = st.button("🪄 Auto-Preencher", key=f"ia_{nome_memoria}_{slugify_key(grupo)}", use_container_width=True)
-                    else:
-                        clicou_ia = False
-
-                with col_btn_lock:
-                    clicou_travar = st.button("🔒 Salvar e Travar", key=f"lock_{nome_memoria}_{slugify_key(grupo)}", disabled=not pode_travar, type="primary", use_container_width=True)
+                # Puxa os itens oficiais que existem cadastrados para este contrato
+                itens_oficiais = self._obter_itens_do_contrato(contrato)
+                
+                if itens_oficiais:
+                    melhor_score = 0
+                    melhor_match = None
                     
-                with col_msg:
-                    if grupo == SEM_CONTRATO:
-                        st.caption("ℹ️ Grupo sem contrato — o salvamento em Parquet está liberado.")
-                    elif incompletos > 0:
-                        st.caption(f"ℹ️ {incompletos} equipamento(s) sem ITEM_DO_CONTRATO.")
-                    else:
-                        st.caption("✅ Grupo completo — pronto para ser travado.")
+                    for item_oficial in itens_oficiais:
+                        # fuzz.token_set_ratio: Acha a palavra-chave mesmo misturada em outras
+                        # Ex: "NOBREAK SMS 1.5KVA NS" vai dar match perfeito com "NOBREAK 1,5 KVA"
+                        score = fuzz.token_set_ratio(equip_nome, str(item_oficial).upper())
+                        
+                        if score > melhor_score:
+                            melhor_score = score
+                            melhor_match = item_oficial
+                            
+                    # Se a similaridade for boa (acima de 70%), ele preenche a tela automaticamente!
+                    if melhor_score >= 70:
+                        item = melhor_match
+                        
+        return contrato, item
 
-                # ------------------------------------------------------------
-                # AÇÕES DOS BOTÕES
-                # ------------------------------------------------------------
-                if clicou_ia:
-                    motor = MotorDeRegras(opcoes_contratos, st.session_state["dict_mestre"])
-                    
-                    novas_colunas = df_editado_grupo.apply(motor.processar_linha, axis=1)
-                    df_editado_grupo['CONTRATO'] = novas_colunas[0]
-                    df_editado_grupo['ITEM_DO_CONTRATO'] = novas_colunas[1]
-                    
-                    df_editado_completo = pd.concat(partes_editadas).sort_index()
-                    df_aba_atual.loc[df_editado_completo.index, df_editado_completo.columns] = df_editado_completo
-                    st.session_state[nome_memoria] = aplicar_automacao_no_dataframe(df_aba_atual)
-                    st.rerun()
-
-                if clicou_travar:
-                    contrato_arquivo = "SEM CONTRATO" if grupo == SEM_CONTRATO else grupo
-                    qtd_travada = travar_grupo(nome_memoria, contrato_arquivo, df_editado_grupo)
-                    st.success(f"🔒 {qtd_travada} equipamento(s) travado(s) e salvos em Parquet!")
-                    st.rerun()
-
-    # Salva as alterações feitas manualmente na tabela regular
-    if algo_mudou:
-        df_editado_completo = pd.concat(partes_editadas).sort_index()
-        df_aba_atual.loc[df_editado_completo.index, df_editado_completo.columns] = df_editado_completo
-        st.session_state[nome_memoria] = aplicar_automacao_no_dataframe(df_aba_atual)
-        st.rerun()
-
-    # ----------------------------------------------------------------
-    # 📦 PAINEL ISOLADO: EXTRA ITENS (ITENS EXTRAS) - AGORA EDITÁVEL
-    # ----------------------------------------------------------------
-    if not df_extras.empty:
-        st.markdown("<br><br>", unsafe_allow_html=True)
-        st.markdown("### 📦 Extra Itens (Fora do Escopo do Contrato)")
-        st.info("Estes equipamentos pertencem a categorias de Kit (Monitores, Estabilizadores, etc.), porém os contratos selecionados não possuem esses itens previstos em contrato. Você pode editá-los manualmente aqui.")
+    # =======================================================================
+    # 🔧 MÉTODOS AUXILIARES
+    # =======================================================================
+    def _obter_itens_do_contrato(self, contrato_texto):
+        """Busca rápida no dict_mestre para saber os itens que um contrato possui."""
+        if not self.dict_mestre or pd.isna(contrato_texto):
+            return []
+            
+        c_norm = normalizar(contrato_texto)
+        chave = None
         
-        df_extras_exibicao = df_extras.drop(columns=["IS_EXTRA_KIT"], errors="ignore")
-        
-        df_extras_editado = st.data_editor(
-            df_extras_exibicao,
-            key=f"editor_extras_{nome_memoria}",
-            use_container_width=True,
-            column_config=configuracao_colunas_base
-        )
-        
-        # Se o utilizador alterar o contrato ou remover o status de extra
-        if not df_extras_editado.equals(df_extras_exibicao):
-            df_aba_atual.loc[df_extras_editado.index, df_extras_editado.columns] = df_extras_editado
-            st.session_state[nome_memoria] = aplicar_automacao_no_dataframe(df_aba_atual)
-            st.rerun()
+        if c_norm in self.dict_mestre:
+            chave = c_norm
+        else:
+            chave = next((k for k in self.dict_mestre.keys() if k.startswith(c_norm + " ") or c_norm.startswith(k + " ")), None)
+            
+        if not chave:
+            return []
+            
+        return [dados["apelido_original"] for dados in self.dict_mestre[chave]["itens"].values()]

@@ -74,12 +74,16 @@ def aplicar_automacao_no_dataframe(df_aba):
         contrato_atual = row.get("CONTRATO")
         item_atual = row.get("ITEM_DO_CONTRATO")
 
-        # Sem contrato? Tudo nulo.
         if pd.isna(contrato_atual) or str(contrato_atual).strip() == "":
             return pd.Series([None, None, True])
 
         c_norm = normalizar(contrato_atual)
-        chave_contrato = next((key for key in dict_mestre.keys() if key == c_norm or key.startswith(c_norm) or c_norm.startswith(key)), None)
+        
+        chave_contrato = None
+        if c_norm in dict_mestre:
+            chave_contrato = c_norm
+        else:
+            chave_contrato = next((key for key in dict_mestre.keys() if key.startswith(c_norm + " ") or c_norm.startswith(key + " ")), None)
         
         # Contrato digitado não existe no banco? Falha.
         if not chave_contrato:
@@ -105,7 +109,6 @@ def aplicar_automacao_no_dataframe(df_aba):
     df_aba["CONTRACT_ID"] = resultados[0]
     df_aba["CONTRACT_ITEM_ID"] = resultados[1]
 
-    # Limpa as células onde a validação falhou (erros_mask = True)
     erros_mask = resultados[2] == True
     if erros_mask.sum() > 0:
         df_aba.loc[erros_mask, "ITEM_DO_CONTRATO"] = None

@@ -24,7 +24,7 @@ def renderizar_aba_organizacao(nome_memoria, configuracao_colunas_base, opcoes_c
         termo_busca = st.text_input("🔍 Filtrar por cliente (nome, ID ou tombo)", key=chave_filtro, placeholder="Digite parte do nome, ID do cliente ou tombo...")
     with col_limpar:
         st.markdown("<div style='height: 1.7em'></div>", unsafe_allow_html=True)
-        st.button("🧹 Limpar", key=f"btn_limpar_{nome_memoria}", use_container_width=True, on_click=limpar_filtro, args=(chave_filtro,))
+        st.button("🧹 Limpar", key=f"btn_limpar_{nome_memoria}", width="stretch", on_click=limpar_filtro, args=(chave_filtro,))
 
     if termo_busca:
         termo_norm = normalizar(termo_busca)
@@ -78,7 +78,7 @@ def renderizar_aba_organizacao(nome_memoria, configuracao_colunas_base, opcoes_c
                 config_grupo = dict(configuracao_colunas_base)
                 config_grupo["ITEM_DO_CONTRATO"] = st.column_config.SelectboxColumn("ITEM_DO_CONTRATO", options=opcoes_item_grupo)
 
-                df_editado_grupo = st.data_editor(df_grupo, key=f"editor_{nome_memoria}_{slugify_key(grupo)}", num_rows="fixed", use_container_width=True, column_config=config_grupo)
+                df_editado_grupo = st.data_editor(df_grupo, key=f"editor_{nome_memoria}_{slugify_key(grupo)}", num_rows="fixed", width="stretch", column_config=config_grupo)
 
                 if not df_editado_grupo.equals(df_grupo):
                     algo_mudou = True
@@ -95,12 +95,12 @@ def renderizar_aba_organizacao(nome_memoria, configuracao_colunas_base, opcoes_c
                 
                 with col_btn_ia:
                     if incompletos > 0:
-                        clicou_ia = st.button("🪄 Auto-Preencher", key=f"ia_{nome_memoria}_{slugify_key(grupo)}", use_container_width=True)
+                        clicou_ia = st.button("🪄 Auto-Preencher", key=f"ia_{nome_memoria}_{slugify_key(grupo)}", width="stretch")
                     else:
                         clicou_ia = False
 
                 with col_btn_lock:
-                    clicou_travar = st.button("🔒 Salvar e Travar", key=f"lock_{nome_memoria}_{slugify_key(grupo)}", disabled=not pode_travar, type="primary", use_container_width=True)
+                    clicou_travar = st.button("🔒 Salvar e Travar", key=f"lock_{nome_memoria}_{slugify_key(grupo)}", disabled=not pode_travar, type="primary", width="stretch")
                     
                 with col_msg:
                     if grupo == SEM_CONTRATO:
@@ -151,7 +151,7 @@ def renderizar_aba_organizacao(nome_memoria, configuracao_colunas_base, opcoes_c
         df_extras_editado = st.data_editor(
             df_extras_exibicao,
             key=f"editor_extras_{nome_memoria}",
-            use_container_width=True,
+            width="stretch",
             column_config=configuracao_colunas_base
         )
         
