@@ -17,7 +17,8 @@ class MotorDeRegras:
             self._regra_contrato_por_similaridade, 
             self._regra_item_detran_ma,            
             self._regra_itens_poli_mono,           
-            self._regra_item_por_similaridade      
+            self._regra_item_por_similaridade,
+            self._regra_item_unico_fallback  
         ] 
 
     def _vazio(self, valor):
@@ -251,7 +252,18 @@ class MotorDeRegras:
                         return contrato, melhor_match
                         
         return contrato, item
-
+    def _regra_item_unico_fallback(self, cliente, equip_nome, contrato, item):
+        """Regra Fallback: Se o contrato possui apenas 1 item no banco, atrela automaticamente."""
+        # Só executa se o contrato está preenchido e o item sobreviveu vazio até aqui
+        if not self._vazio(contrato) and self._vazio(item):
+            itens_oficiais = self._obter_itens_do_contrato(contrato)
+            
+            # Se a lista de itens desse contrato tiver exatamente o tamanho 1
+            if len(itens_oficiais) == 1:
+                # Preenche com o único item existente!
+                return contrato, itens_oficiais[0]
+                
+        return contrato, item
     # =======================================================================
     # 🔧 MÉTODOS AUXILIARES
     # =======================================================================

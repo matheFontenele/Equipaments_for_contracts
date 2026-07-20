@@ -21,11 +21,11 @@ LEGACY_RELATORIO_BANCO_PATH = BASE_DIR / "relatorio_banco.csv"
 @st.cache_resource
 def obter_conexao_legado():
     """Conexão com o banco antigo (Origem dos Equipamentos)"""
-    db_host = os.getenv("DB_HOST", "localhost")
-    db_port = os.getenv("DB_PORT", "3307")
-    db_name = os.getenv("DB_DATABASE", "aluguel_legado")
-    db_user = os.getenv("DB_USERNAME", "root")
-    db_pass = os.getenv("DB_PASSWORD", "root")
+    db_host = os.getenv("DB_HOST")
+    db_port = os.getenv("DB_PORT")
+    db_name = os.getenv("DB_DATABASE")
+    db_user = os.getenv("DB_USERNAME")
+    db_pass = os.getenv("DB_PASSWORD")
 
     URL_CONEXAO = f"mysql+pymysql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
     return create_engine(URL_CONEXAO, pool_pre_ping=True)
@@ -33,12 +33,11 @@ def obter_conexao_legado():
 @st.cache_resource
 def obter_conexao_novo():
     """Conexão com o banco novo (Origem dos Contratos e Itens)"""
-    # Usa credenciais específicas se existirem, senão herda as credenciais padrão do legado
-    db_host = os.getenv("DB_HOST_NOVO", os.getenv("DB_HOST", "localhost"))
-    db_port = os.getenv("DB_PORT_NOVO", os.getenv("DB_PORT", "3307"))
-    db_name = os.getenv("DB_DATABASE_NOVO", "controle-interno") # Nome do banco novo
-    db_user = os.getenv("DB_USERNAME_NOVO", os.getenv("DB_USERNAME", "root"))
-    db_pass = os.getenv("DB_PASSWORD_NOVO", os.getenv("DB_PASSWORD", "root"))
+    db_host = os.getenv("DB_NOVO_HOST")
+    db_port = os.getenv("DB_NOVO_PORT")
+    db_name = os.getenv("DB_NOVO_DATABASE")
+    db_user = os.getenv("DB_NOVO_USERNAME")
+    db_pass = os.getenv("DB_NOVO_PASSWORD")
 
     URL_CONEXAO = f"mysql+pymysql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
     return create_engine(URL_CONEXAO, pool_pre_ping=True)
