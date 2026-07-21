@@ -86,18 +86,22 @@ def renderizar_aba_organizacao(nome_memoria, configuracao_colunas_base, opcoes_c
                 partes_editadas.append(df_editado_grupo)
 
                 # ------------------------------------------------------------
-                # 🤖 BOTÕES DE AÇÃO (IA e TRAVAMENTO)
+                # BOTÕES DE AÇÃO
                 # ------------------------------------------------------------
                 incompletos = df_editado_grupo["ITEM_DO_CONTRATO"].isna().sum()
                 pode_travar = len(df_editado_grupo) > 0
 
-                col_btn_ia, col_btn_lock, col_msg = st.columns([1.5, 1.5, 3])
+                col_btn_ia, col_btn_limpar, col_btn_lock, col_msg = st.columns([1.2, 1.2, 1.2, 2.4])
                 
                 with col_btn_ia:
                     if incompletos > 0:
                         clicou_ia = st.button("🪄 Auto-Preencher", key=f"ia_{nome_memoria}_{slugify_key(grupo)}", width="stretch")
                     else:
                         clicou_ia = False
+
+                with col_btn_limpar:
+                    # Botão secundário de limpeza
+                    clicou_limpar = st.button("🧹 Limpar", key=f"limpar_{nome_memoria}_{slugify_key(grupo)}", width="stretch")
 
                 with col_btn_lock:
                     clicou_travar = st.button("🔒 Salvar e Travar", key=f"lock_{nome_memoria}_{slugify_key(grupo)}", disabled=not pode_travar, type="primary", width="stretch")
@@ -122,6 +126,12 @@ def renderizar_aba_organizacao(nome_memoria, configuracao_colunas_base, opcoes_c
                     
                     df_editado_completo = pd.concat(partes_editadas).sort_index()
                     df_aba_atual.loc[df_editado_completo.index, df_editado_completo.columns] = df_editado_completo
+                    st.session_state[nome_memoria] = aplicar_automacao_no_dataframe(df_aba_atual)
+                    st.rerun()
+
+                if clicou_limpar:
+                    # A Mágica do Reset: Pega apenas os IDs que estão neste grupo e injeta "None" neles
+                    df_aba_atual.loc[df_editado_grupo.index, ['CONTRATO', 'ITEM_DO_CONTRATO', 'CONTRACT_ID', 'CONTRACT_ITEM_ID']] = None
                     st.session_state[nome_memoria] = aplicar_automacao_no_dataframe(df_aba_atual)
                     st.rerun()
 
