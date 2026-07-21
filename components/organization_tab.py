@@ -91,7 +91,10 @@ def renderizar_aba_organizacao(nome_memoria, configuracao_colunas_base, opcoes_c
                 incompletos = df_editado_grupo["ITEM_DO_CONTRATO"].isna().sum()
                 pode_travar = len(df_editado_grupo) > 0
 
-                col_btn_ia, col_btn_limpar, col_btn_lock, col_msg = st.columns([1.2, 1.2, 1.2, 2.4])
+                # Descobre se a tabela atual sofreu edição manual do usuário
+                houve_edicao_manual = not df_editado_grupo.equals(df_grupo)
+
+                col_btn_ia, col_btn_limpar, col_btn_atualizar, col_btn_lock, col_msg = st.columns([1.2, 1.2, 1.2, 1.5, 2.0])
                 
                 with col_btn_ia:
                     if incompletos > 0:
@@ -100,15 +103,19 @@ def renderizar_aba_organizacao(nome_memoria, configuracao_colunas_base, opcoes_c
                         clicou_ia = False
 
                 with col_btn_limpar:
-                    # Botão secundário de limpeza
                     clicou_limpar = st.button("🧹 Limpar", key=f"limpar_{nome_memoria}_{slugify_key(grupo)}", width="stretch")
+
+                with col_btn_atualizar:
+                    # O botão "Acende" (primary) chamando a atenção do usuário se ele editar algo
+                    tipo_btn = "primary" if houve_edicao_manual else "secondary"
+                    clicou_atualizar = st.button("💾 Atualizar", key=f"atualizar_{nome_memoria}_{slugify_key(grupo)}", width="stretch", disabled=not houve_edicao_manual, type=tipo_btn)
 
                 with col_btn_lock:
                     clicou_travar = st.button("🔒 Salvar e Travar", key=f"lock_{nome_memoria}_{slugify_key(grupo)}", disabled=not pode_travar, type="primary", width="stretch")
                     
                 with col_msg:
                     if grupo == SEM_CONTRATO:
-                        st.caption("ℹ️ Grupo sem contrato — o salvamento em Parquet está liberado.")
+                        st.caption("ℹ️ Grupo sem contrato.")
                     elif incompletos > 0:
                         st.caption(f"ℹ️ {incompletos} equipamento(s) sem ITEM_DO_CONTRATO.")
                     else:
@@ -119,34 +126,32 @@ def renderizar_aba_organizacao(nome_memoria, configuracao_colunas_base, opcoes_c
                 # ------------------------------------------------------------
                 if clicou_ia:
                     motor = MotorDeRegras(opcoes_contratos, st.session_state["dict_mestre"])
-                    
                     novas_colunas = df_editado_grupo.apply(motor.processar_linha, axis=1)
                     df_editado_grupo['CONTRATO'] = novas_colunas[0]
                     df_editado_grupo['ITEM_DO_CONTRATO'] = novas_colunas[1]
                     
-                    df_editado_completo = pd.concat(partes_editadas).sort_index()
-                    df_aba_atual.loc[df_editado_completo.index, df_editado_completo.columns] = df_editado_completo
+                    # Atualiza diretamente via IA
+                    df_aba_atual.loc[df_editado_grupo.index, df_editado_grupo.columns] = df_editado_grupo
                     st.session_state[nome_memoria] = aplicar_automacao_no_dataframe(df_aba_atual)
                     st.rerun()
 
                 if clicou_limpar:
-                    # A Mágica do Reset: Pega apenas os IDs que estão neste grupo e injeta "None" neles
                     df_aba_atual.loc[df_editado_grupo.index, ['CONTRATO', 'ITEM_DO_CONTRATO', 'CONTRACT_ID', 'CONTRACT_ITEM_ID']] = None
+                    st.session_state[nome_memoria] = aplicar_automacao_no_dataframe(df_aba_atual)
+                    st.rerun()
+
+                if clicou_atualizar:
+                    # Salva APENAS as modificações manuais deste contrato no banco de memória
+                    df_aba_atual.loc[df_editado_grupo.index, df_editado_grupo.columns] = df_editado_grupo
                     st.session_state[nome_memoria] = aplicar_automacao_no_dataframe(df_aba_atual)
                     st.rerun()
 
                 if clicou_travar:
                     contrato_arquivo = "SEM CONTRATO" if grupo == SEM_CONTRATO else grupo
+                    # O travar_grupo já pega os dados editados que estão na tela, mesmo se o usuário não clicou em atualizar
                     qtd_travada = travar_grupo(nome_memoria, contrato_arquivo, df_editado_grupo)
                     st.success(f"🔒 {qtd_travada} equipamento(s) travado(s) e salvos em Parquet!")
                     st.rerun()
-
-    # Salva as alterações feitas manualmente na tabela regular
-    if algo_mudou:
-        df_editado_completo = pd.concat(partes_editadas).sort_index()
-        df_aba_atual.loc[df_editado_completo.index, df_editado_completo.columns] = df_editado_completo
-        st.session_state[nome_memoria] = aplicar_automacao_no_dataframe(df_aba_atual)
-        st.rerun()
 
     # ----------------------------------------------------------------
     # 📦 PAINEL ISOLADO: EXTRA ITENS (ITENS EXTRAS) - AGORA EDITÁVEL
