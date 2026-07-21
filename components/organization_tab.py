@@ -147,8 +147,11 @@ def renderizar_aba_organizacao(nome_memoria, configuracao_colunas_base, opcoes_c
                     st.rerun()
 
                 if clicou_travar:
+                    if houve_edicao_manual:
+                        df_aba_atual.loc[df_editado_grupo.index, df_editado_grupo.columns] = df_editado_grupo
+                        st.session_state[nome_memoria] = aplicar_automacao_no_dataframe(df_aba_atual)
+                        
                     contrato_arquivo = "SEM CONTRATO" if grupo == SEM_CONTRATO else grupo
-                    # O travar_grupo já pega os dados editados que estão na tela, mesmo se o usuário não clicou em atualizar
                     qtd_travada = travar_grupo(nome_memoria, contrato_arquivo, df_editado_grupo)
                     st.success(f"🔒 {qtd_travada} equipamento(s) travado(s) e salvos em Parquet!")
                     st.rerun()
