@@ -119,7 +119,7 @@ def renderizar_aba_organizacao(nome_memoria, configuracao_colunas_base, opcoes_c
                     elif incompletos > 0:
                         st.caption(f"ℹ️ {incompletos} equipamento(s) sem ITEM_DO_CONTRATO.")
                     else:
-                        st.caption("✅ Grupo completo — pronto para ser travado.")
+                        st.caption("✅ Grupo completo")
 
                 # ------------------------------------------------------------
                 # AÇÕES DOS BOTÕES

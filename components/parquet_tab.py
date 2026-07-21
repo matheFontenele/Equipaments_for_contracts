@@ -24,42 +24,67 @@ def renderizar_arquivos_parquet():
     if arquivos_dados:
         df_arquivos_parquet = pd.DataFrame(arquivos_dados)
         st.subheader("🔓 Painel de Itens Salvos")
-        st.caption("Selecione abaixo os lotes que deseja reabrir para edição na tabela principal.")
+        st.caption("Selecione abaixo os lotes que deseja reabrir, ou exporte a base consolidada para migração.")
         
-        # 1. Troca do Selectbox pelo Multiselect
+        # 1. Seleção Múltipla
         arquivos_selecionados = st.multiselect(
-            "Escolha os lotes para destravar (você pode selecionar vários):", 
+            "Escolha os lotes para destravar ou exportar (você pode selecionar vários):", 
             options=df_arquivos_parquet["Nome do Arquivo"].tolist(), 
             key="ms_destravar_parquet",
             placeholder="Clique ou digite para buscar o lote..."
         )
         
-        # 2. Layout de botões
-        col1, col2 = st.columns(2)
+        # 2. Layout de botões (Agora com 3 colunas)
+        col1, col2, col3 = st.columns(3)
         
         with col1:
-            # Botão de destrava múltipla (só fica clicável se pelo menos 1 arquivo for selecionado)
-            if st.button("🔓 Destravar Selecionados", type="primary", disabled=len(arquivos_selecionados) == 0, use_container_width=True):
+            if st.button("🔓 Destravar Selecionados", type="secondary", disabled=len(arquivos_selecionados) == 0, use_container_width=True):
                 with st.spinner("Destravando lotes selecionados..."):
                     for arquivo in arquivos_selecionados:
-                        # Puxa os dados daquele arquivo específico
                         linha_arq = df_arquivos_parquet[df_arquivos_parquet["Nome do Arquivo"] == arquivo].iloc[0]
                         destravar_arquivo(linha_arq["caminho_completo"], linha_arq["Organização"])
                 st.rerun()
 
         with col2:
-            # Botão de destrava em massa absoluta (Pânico/Reset)
-            if st.button("🚨 Destravar TODOS os Lotes", type="secondary", use_container_width=True):
+            if st.button("🚨 Destravar TODOS", type="secondary", use_container_width=True):
                 with st.spinner("Limpando trava de todos os lotes..."):
-                    # Varre a tabela inteira e destrava um por um
                     for _, linha_arq in df_arquivos_parquet.iterrows():
                         destravar_arquivo(linha_arq["caminho_completo"], linha_arq["Organização"])
                 st.rerun()
 
-        # 3. Tabela Visual (Aproveitando os dados de Tamanho e Data que você já puxava)
+        with col3:
+            # Define se vai exportar apenas os que foram marcados no selectbox ou a base inteira
+            nomes_alvo = arquivos_selecionados if arquivos_selecionados else df_arquivos_parquet["Nome do Arquivo"].tolist()
+            df_alvo = df_arquivos_parquet[df_arquivos_parquet["Nome do Arquivo"].isin(nomes_alvo)]
+            
+            try:
+                # O Pandas lê todos os arquivos bloqueados na velocidade da luz
+                dfs_para_exportar = [pd.read_parquet(caminho) for caminho in df_alvo["caminho_completo"]]
+                
+                if dfs_para_exportar:
+                    # Cola todos os DataFrames um embaixo do outro
+                    df_mestre = pd.concat(dfs_para_exportar, ignore_index=True)
+                    
+                    # Converte o dataframe gigante resultante de volta para formato Parquet (na memória)
+                    parquet_bytes = df_mestre.to_parquet(index=False)
+                    
+                    texto_btn = "📦 Baixar Selecionados" if arquivos_selecionados else "📦 Baixar Dados"
+                    
+                    # O st.download_button nativo do Streamlit joga o arquivo direto pro navegador do usuário
+                    st.download_button(
+                        label=texto_btn,
+                        data=parquet_bytes,
+                        file_name=f"MIGRACAO_{datetime.now().strftime('%Y%m%d_%H%M')}.parquet",
+                        mime="application/octet-stream",
+                        use_container_width=True,
+                        type="primary"
+                    )
+            except Exception as e:
+                st.error(f"Não foi possível gerar o arquivo consolidado. Erro: {e}")
+
+        # 3. Tabela Visual
         st.markdown("<hr>", unsafe_allow_html=True)
         st.markdown("##### 📋 Visão Geral dos Lotes Travados")
-        # Exibe a tabela ocultando a coluna do caminho (que é feia para o usuário)
         st.dataframe(df_arquivos_parquet.drop(columns=["caminho_completo"]), width="stretch")
         
     else:
