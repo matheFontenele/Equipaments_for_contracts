@@ -16,7 +16,8 @@ class MotorDeRegras:
             self._regra_contrato_mt,               
             self._regra_contrato_por_similaridade, 
             self._regra_item_detran_ma,            
-            self._regra_itens_poli_mono,           
+            self._regra_itens_poli_mono,
+            self._regra_itens_micro_notebook,           
             self._regra_item_por_similaridade,
             self._regra_item_unico_fallback  
         ] 
@@ -75,7 +76,6 @@ class MotorDeRegras:
                         if str(opcao).upper().strip() == contrato_correto.upper().strip():
                             return opcao, item
         return contrato, item
-
     def _regra_contrato_mte(self, cliente, equip_nome, contrato, item):
         if self._vazio(contrato):
             if "MTE" in cliente:
@@ -83,7 +83,6 @@ class MotorDeRegras:
                     if "MTE" in str(c).upper():
                         return c, item
         return contrato, item
-
     def _regra_contrato_mt(self, cliente, equip_nome, contrato, item):
         if self._vazio(contrato):
             if "MINISTERIO DOS TRANSPORTE" in cliente or "MINISTÉRIO DOS TRANSPORTE" in cliente:
@@ -92,7 +91,6 @@ class MotorDeRegras:
                     if c_limpo == "MT" or c_limpo.startswith("MT -") or c_limpo.startswith("MT "):
                         return c, item
         return contrato, item
-
     def _regra_contrato_por_similaridade(self, cliente, equip_nome, contrato, item):
         if self._vazio(contrato):
             cliente_limpo = str(cliente).upper().strip()
@@ -168,7 +166,6 @@ class MotorDeRegras:
                 return melhor_match, item
                 
         return contrato, item
-
     def _regra_item_detran_ma(self, cliente, equip_nome, contrato, item):
         if not self._vazio(contrato) and "DETRAN MA" in str(contrato).upper():
             if self._vazio(item):
@@ -179,7 +176,6 @@ class MotorDeRegras:
                     item_sugerido = next((i for i in itens_possiveis if "MICRO" in str(i).upper()), None)
                 if item_sugerido: return contrato, item_sugerido
         return contrato, item
-   
     def _regra_itens_poli_mono(self, cliente, equip_nome, contrato, item):
         if not self._vazio(contrato):
             palavras_impressao = ["MULTIFUNCIONAL", "IMPRESSORA", "MONO", "COLOR", "POLI", "JATO DE TINTA", "LASER"]
@@ -213,7 +209,34 @@ class MotorDeRegras:
                     if item_sugerido:
                         return contrato, item_sugerido
         return contrato, item
-
+    def _regra_itens_micro_notebook(self, cliente, equip_nome, contrato, item):
+        """Regra Escalável: Triagem inteligente para famílias de Computadores e Notebooks."""
+        if not self._vazio(contrato):
+            
+            # Palavras-chave que definem as famílias
+            palavras_micro = ["THINKCENTRE", "MICRO", "COMPUTADOR", "DESKTOP", "PC", "CPU"]
+            palavras_note = ["NOTEBOOK", "LAPTOP"]
+            
+            is_micro = any(p in equip_nome for p in palavras_micro)
+            is_note = any(p in equip_nome for p in palavras_note)
+            
+            if is_micro or is_note:
+                if self._vazio(item):
+                    itens_possiveis = self._obter_itens_do_contrato(contrato)
+                    item_sugerido = None
+                    
+                    if is_note:
+                        # Varre os itens oficiais buscando algum que represente Notebook
+                        item_sugerido = next((i for i in itens_possiveis if any(p in normalizar(i) for p in palavras_note)), None)
+                    
+                    elif is_micro:
+                        # Varre os itens oficiais buscando algum que represente Micro/Desktop
+                        item_sugerido = next((i for i in itens_possiveis if any(p in normalizar(i) for p in palavras_micro)), None)
+                    
+                    if item_sugerido:
+                        return contrato, item_sugerido
+                        
+        return contrato, item
     def _regra_item_por_similaridade(self, cliente, equip_nome, contrato, item):
         if not self._vazio(contrato):
             if self._vazio(item):
