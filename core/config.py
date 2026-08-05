@@ -43,7 +43,11 @@ CLIENTES_IGNORADOS = [
 # ==============================================================================
 #  DICIONÁRIO DE EXCEÇÕES (DE/PARA)
 # ==============================================================================
-DE_PARA_CLIENTES = {}
+DE_PARA_CLIENTES = {
+    "INSTITUTO DE PREVIDENCIA E ASSISTENCIA DO MUNICIPIO - IPAM 2026" : "IPAM",
+    "PM SÃO LUIS / SECRETARIA DE INFORMACAO E TECNOLOGIA - SEMIT 2026" : "SECRETARIA MUNICIPAL DE INFORMAÇÃO E TECNOLOGIA - SEMIT",
+    "MULTINTEGRADA": "MULTINTEGRADA LTDA"
+}
 
 # Termos padronizados para substituição pré-análise
 SUBSTITUICOES_TERMOS = {
@@ -56,6 +60,7 @@ SUBSTITUICOES_TERMOS = {
 #  LISTA DE KITS
 # ==============================================================================
 IS_KIT = [
+    'SCANNER CANON',
     'APARELHO AQUECEDOR DE FOLHAS ETUFA SN',
     'TERMÔMETRO E HIGRÔMETRO COM RELOGIO DIGITAL HTC-1 SN',
     'MESA PARA TASKALFA',

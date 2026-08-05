@@ -74,42 +74,35 @@ def obter_caminho_relatorio_banco():
 # =======================================================================
 
 def buscar_dados_por_orgao(engine_legado, lista_ids):
-    """Busca a base de equipamentos ativos no banco LEGADO"""
+    """Busca a base de equipamentos ativos no banco LEGADO usando CTE para maior performance"""
     lista_ids_str = ", ".join(str(i) for i in lista_ids)
+    
     query = f"""
+        WITH UltimosMovimentos AS (
+            SELECT
+                movi.equipamento_id,
+                mov.cliente_id,
+                mov.data,
+                ROW_NUMBER() OVER(PARTITION BY movi.equipamento_id ORDER BY mov.data DESC, mov.id DESC) as rn
+            FROM aluguel_movimento_itens movi
+            INNER JOIN aluguel_movimento mov ON movi.movimento_id = mov.id
+            WHERE mov.deleted_at IS NULL AND movi.deleted_at IS NULL
+        )
         SELECT
-        alc.id AS id_cliente,
-        alc.nome_razao_social AS nome_cliente,
-        alq.id AS id_equipamento,
-        alq.numero AS tombo,
-        alq.nome AS nome_equipamentos,
-        am.orgao_id,
-        alq.deleted_at
-    FROM aluguel_equipamentos alq
-    INNER JOIN (
-        SELECT
-            ami.equipamento_id,
-            MAX(am.id) AS ultimo_movimento
-        FROM aluguel_movimento_itens ami
-        INNER JOIN aluguel_movimento am
-            ON am.id = ami.movimento_id
-        WHERE am.deleted_at IS NULL
-        AND ami.deleted_at IS NULL
-        GROUP BY ami.equipamento_id
-    ) ult
-        ON ult.equipamento_id = alq.id
-    INNER JOIN aluguel_movimento am
-        ON am.id = ult.ultimo_movimento
-    INNER JOIN aluguel_movimento_itens ami
-        ON ami.movimento_id = am.id
-    AND ami.equipamento_id = alq.id
-    INNER JOIN aluguel_clientes alc
-        ON alc.id = am.cliente_id
-    WHERE alq.situacao_id = 1
-    AND am.orgao_id IN ({lista_ids_str})
-    AND am.deleted_at IS NULL
-    AND ami.deleted_at IS NULL
-    AND alc.deleted_at IS NULL;
+            cli.id AS id_cliente,
+            cli.nome_razao_social AS nome_cliente,
+            alq.id AS id_equipamento,
+            alq.numero AS tombo,
+            alq.nome AS nome_equipamentos,
+            cli.orgao_id AS orgao_id,
+            um.data AS data
+        FROM aluguel_equipamentos alq
+        -- Junta com a CTE pegando apenas a linha onde rn = 1 (O último movimento)
+        INNER JOIN UltimosMovimentos um ON alq.id = um.equipamento_id AND um.rn = 1
+        INNER JOIN aluguel_clientes cli ON um.cliente_id = cli.id
+        WHERE alq.deleted_at IS NULL 
+          AND alq.situacao_id = 1
+          AND cli.orgao_id IN ({lista_ids_str});
     """
     return pd.read_sql(query, con=engine_legado)
 
@@ -132,4 +125,3 @@ def carregar_contratos_do_banco(engine_novo):
         INNER JOIN customers cus ON con.customer_id = cus.id
     """
     return pd.read_sql(query, con=engine_novo)
-    return pd.read_sql(query, con=engine)

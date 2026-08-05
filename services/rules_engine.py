@@ -76,6 +76,7 @@ class MotorDeRegras:
                         if str(opcao).upper().strip() == contrato_correto.upper().strip():
                             return opcao, item
         return contrato, item
+    
     def _regra_contrato_mte(self, cliente, equip_nome, contrato, item):
         if self._vazio(contrato):
             if "MTE" in cliente:
@@ -83,6 +84,7 @@ class MotorDeRegras:
                     if "MTE" in str(c).upper():
                         return c, item
         return contrato, item
+    
     def _regra_contrato_mt(self, cliente, equip_nome, contrato, item):
         if self._vazio(contrato):
             if "MINISTERIO DOS TRANSPORTE" in cliente or "MINISTÉRIO DOS TRANSPORTE" in cliente:
@@ -91,6 +93,7 @@ class MotorDeRegras:
                     if c_limpo == "MT" or c_limpo.startswith("MT -") or c_limpo.startswith("MT "):
                         return c, item
         return contrato, item
+    
     def _regra_contrato_por_similaridade(self, cliente, equip_nome, contrato, item):
         if self._vazio(contrato):
             cliente_limpo = str(cliente).upper().strip()
@@ -166,6 +169,7 @@ class MotorDeRegras:
                 return melhor_match, item
                 
         return contrato, item
+    
     def _regra_item_detran_ma(self, cliente, equip_nome, contrato, item):
         if not self._vazio(contrato) and "DETRAN MA" in str(contrato).upper():
             if self._vazio(item):
@@ -176,6 +180,7 @@ class MotorDeRegras:
                     item_sugerido = next((i for i in itens_possiveis if "MICRO" in str(i).upper()), None)
                 if item_sugerido: return contrato, item_sugerido
         return contrato, item
+    
     def _regra_itens_poli_mono(self, cliente, equip_nome, contrato, item):
         if not self._vazio(contrato):
             palavras_impressao = ["MULTIFUNCIONAL", "IMPRESSORA", "MONO", "COLOR", "POLI", "JATO DE TINTA", "LASER"]
@@ -209,6 +214,7 @@ class MotorDeRegras:
                     if item_sugerido:
                         return contrato, item_sugerido
         return contrato, item
+    
     def _regra_itens_micro_notebook(self, cliente, equip_nome, contrato, item):
         """Regra Escalável: Triagem inteligente para famílias de Computadores e Notebooks."""
         if not self._vazio(contrato):
@@ -237,6 +243,7 @@ class MotorDeRegras:
                         return contrato, item_sugerido
                         
         return contrato, item
+    
     def _regra_item_por_similaridade(self, cliente, equip_nome, contrato, item):
         if not self._vazio(contrato):
             if self._vazio(item):
@@ -246,26 +253,34 @@ class MotorDeRegras:
                     melhor_score = 0
                     melhor_match = None
                     
-                    # Limpeza cirúrgica mantendo números (I5, 700)
+                    # Limpeza cirúrgica mantendo letras e números (I5, 700, A03, 32GB, 128GB)
                     equip_limpo = re.sub(r'[^A-Z0-9\s]', ' ', equip_nome.upper())
                     equip_expandido = f" {equip_limpo} "
-                    
                     sinonimos = {
-                        " MICRO ": " MICROCOMPUTADOR ",
-                        " PC ": " MICROCOMPUTADOR ",
-                        " NOTE ": " NOTEBOOK ",
-                        " TV ": " SMART TV ",
-                        " IMP ": " IMPRESSORA "
+                        " MICRO ": " MICROCOMPUTADOR PC DESKTOP ",
+                        " PC ": " MICROCOMPUTADOR DESKTOP ",
+                        " NOTE ": " NOTEBOOK LAPTOP ",
+                        " TV ": " SMART TV TELEVISAO ",
+                        " IMP ": " IMPRESSORA ",
+                        " CELULAR ": " CELULAR SMARTPHONE ",
+                        " SMARTPHONE ": " CELULAR SMARTPHONE "
                     }
-                    for abrev, completo in sinonimos.items():
-                        equip_expandido = equip_expandido.replace(abrev, completo)
+                    
+                    for abrev, expansao in sinonimos.items():
+                        if abrev in equip_expandido:
+                            # Adiciona a expansão na string base para a matemática do RapidFuzz cruzar os dados
+                            equip_expandido = equip_expandido.replace(abrev, f" {expansao} ")
+                            
                     equip_expandido = equip_expandido.strip()
 
                     for item_oficial in itens_oficiais:
-                        # Limpa também o item do banco mantendo números
+                        # Limpa também o item do banco mantendo os números
                         item_limpo = re.sub(r'[^A-Z0-9\s]', ' ', str(item_oficial).upper()).strip()
                         
+                        # O token_set_ratio isola as palavras em comum. '
+                        # Ele vai capturar o "A03" e "32GB" perfeitamente e jogar a nota lá pra cima!
                         score = fuzz.token_set_ratio(equip_expandido, item_limpo)
+                        
                         if score > melhor_score:
                             melhor_score = score
                             melhor_match = item_oficial
@@ -275,6 +290,7 @@ class MotorDeRegras:
                         return contrato, melhor_match
                         
         return contrato, item
+    
     def _regra_item_unico_fallback(self, cliente, equip_nome, contrato, item):
         """Regra Fallback: Se o contrato possui apenas 1 item no banco, atrela automaticamente."""
         # Só executa se o contrato está preenchido e o item sobreviveu vazio até aqui

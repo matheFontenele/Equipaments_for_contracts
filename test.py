@@ -1,117 +1,85 @@
-import pandas as pd
-from rapidfuzz import fuzz
-from utils.text_processing import normalizar
-from core.config import IS_KIT, DE_PARA_CLIENTES, CLIENTES_IGNORADOS, SUBSTITUICOES_TERMOS, CONTRATOS_POLI_MONO
-
-class MotorDeRegras:
-    def __init__(self, opcoes_contratos, dict_mestre):
-        self.opcoes_contratos = opcoes_contratos
-        self.dict_mestre = dict_mestre
-        
-        # 🧠 O CÉREBRO
-        self.regras = [
-            self._regra_de_para_explicito,         # 1º: Valida se está forçado no DE/PARA
-            self._regra_contrato_mte,              # 2º: Regra estática do MTE
-            self._regra_contrato_mt,               # 3º: Regra estática do MT
-            self._regra_contrato_por_similaridade, # 4º: Motor de Contratos Inteligente
-            self._regra_item_detran_ma,            # 5º: Regras específicas de Itens
-            self._regra_itens_poli_mono,           # 6º: Triagem Impressoras
-            self._regra_item_por_similaridade      # 7º: NOVO! Motor Universal de Itens via IA
-        ] 
-
-    def processar_linha(self, row):
-        contrato_atual = row.get('CONTRATO')
-        item_atual = row.get('ITEM_DO_CONTRATO')
-        cliente = str(row.get('CLIENTE_NOME', '')).upper()
-        equip_nome = str(row.get('EQUIPAMENTO_NOME', '')).upper()
-
-        # =================================================================
-        # 1. 🚫 ESCUDO DA BLACKLIST (Entrada)
-        # =================================================================
-        cliente_tratado = cliente.strip()
-        for ignorado in CLIENTES_IGNORADOS:
-            if ignorado in cliente_tratado or cliente_tratado in ignorado:
-                return pd.Series([None, None])
-
-        # =================================================================
-        # 2. MOTOR DE REGRAS (Tenta descobrir Contrato e Item)
-        # =================================================================
-        for regra in self.regras:
-            if pd.notna(contrato_atual) and str(contrato_atual).strip() != "" and \
-               pd.notna(item_atual) and str(item_atual).strip() != "":
-                break
-            contrato_atual, item_atual = regra(cliente, equip_nome, contrato_atual, item_atual)
-
-        # =================================================================
-        # 3. 🛡️ ESCUDO DE KITS (Saída / Pós-Processamento)
-        # =================================================================
-        # Se depois de passar por todas as regras o equipamento ainda for suspeito de ser KIT...
-        is_kit = any(str(cat).upper() in equip_nome for cat in IS_KIT)
-        
-        if is_kit:
-            # Se o nosso motor universal de itens (RapidFuzz) conseguiu achar um item 
-            # oficial no contrato, nós damos o SALVO-CONDUTO!
-            if pd.notna(item_atual) and str(item_atual).strip() != "":
-                pass 
-            else:
-                # É kit (ex: teclado) e não achou item oficial faturável no contrato? Ejeta!
-                return pd.Series([None, None])
-
-        return pd.Series([contrato_atual, item_atual])
-
-    # =======================================================================
-    # 📚 BIBLIOTECA DE REGRAS
-    # =======================================================================
-
-    # ... [MANTENHA AQUI AS REGRAS QUE VOCÊ JÁ TEM: _regra_de_para_explicito, MTE, MT, Similaridade, Detran_MA, Poli_Mono] ...
-    
-    # Adicione a nova regra UNIVERSAL de itens logo abaixo da regra das Mono/Poli:
-
-    def _regra_item_por_similaridade(self, cliente, equip_nome, contrato, item):
-        """Regra Universal: Associa o equipamento ao item do contrato via IA (Fuzzy Matching)"""
-        # Só tenta preencher se o contrato já estiver preenchido e o item ainda vazio
-        if pd.notna(contrato) and str(contrato).strip() != "":
-            if pd.isna(item) or str(item).strip() == "":
+def _regra_contrato_por_similaridade(self, cliente, equip_nome, contrato, item):
+        """Motor Inteligente de Contratos: Usa Normalização Absoluta e Fuzzy Matching"""
+        if self._vazio(contrato):
+            
+            # 1. NORMALIZAÇÃO ABSOLUTA (Mata acentos, cedilhas e espaços duplos antes de ler)
+            cliente_limpo = normalizar(str(cliente)).strip()
+            
+            for termo_original, substituto in SUBSTITUICOES_TERMOS.items():
+                # Normalizamos o De-Para também, por segurança
+                cliente_limpo = cliente_limpo.replace(normalizar(termo_original), normalizar(substituto))
                 
-                # Puxa os itens oficiais que existem cadastrados para este contrato
-                itens_oficiais = self._obter_itens_do_contrato(contrato)
+            cliente_limpo = re.sub(r'\s+', ' ', cliente_limpo.replace('-', ' ').replace('/', ' '))
+            
+            # 2. FILTRO MT (Mantendo o isolamento)
+            opcoes_permitidas = []
+            for c in self.opcoes_contratos:
+                if self._vazio(c): continue
+                c_norm = normalizar(str(c)).strip()
+                if c_norm == "MT" or c_norm.startswith("MT -") or c_norm.startswith("MT "):
+                    if "TRANSPORTE" not in cliente_limpo:
+                        continue 
+                opcoes_permitidas.append(c)
+
+            # 3. TESTE BIDIRECIONAL COM IA (RapidFuzz)
+            melhor_score = 0
+            melhor_match = None
+            
+            for c in opcoes_permitidas:
+                # Normaliza o contrato do banco novo (mata os acentos dele também)
+                contrato_limpo = normalizar(str(c))
+                contrato_limpo = re.sub(r'\s+', ' ', contrato_limpo.replace('-', ' ').replace('/', ' ')).strip()
                 
-                if itens_oficiais:
-                    melhor_score = 0
-                    melhor_match = None
+                # Teste Exato Bidirecional (Imune a acentos)
+                if contrato_limpo in cliente_limpo:
+                    return c, item
+                if len(cliente_limpo) >= 4 and cliente_limpo in contrato_limpo:
+                    return c, item
                     
-                    for item_oficial in itens_oficiais:
-                        # fuzz.token_set_ratio: Acha a palavra-chave mesmo misturada em outras
-                        # Ex: "NOBREAK SMS 1.5KVA NS" vai dar match perfeito com "NOBREAK 1,5 KVA"
-                        score = fuzz.token_set_ratio(equip_nome, str(item_oficial).upper())
-                        
-                        if score > melhor_score:
-                            melhor_score = score
-                            melhor_match = item_oficial
-                            
-                    # Se a similaridade for boa (acima de 70%), ele preenche a tela automaticamente!
-                    if melhor_score >= 70:
-                        item = melhor_match
-                        
-        return contrato, item
+                # Teste de Similaridade IA (Lida com letras trocadas e palavras fora de ordem)
+                # Exemplo: "RELACOES EXTRERIORES" -> 97% de similaridade
+                score = fuzz.token_set_ratio(cliente_limpo, contrato_limpo)
+                
+                if score > melhor_score:
+                    melhor_score = score
+                    melhor_match = c
 
-    # =======================================================================
-    # 🔧 MÉTODOS AUXILIARES
-    # =======================================================================
-    def _obter_itens_do_contrato(self, contrato_texto):
-        """Busca rápida no dict_mestre para saber os itens que um contrato possui."""
-        if not self.dict_mestre or pd.isna(contrato_texto):
-            return []
-            
-        c_norm = normalizar(contrato_texto)
-        chave = None
-        
-        if c_norm in self.dict_mestre:
-            chave = c_norm
-        else:
-            chave = next((k for k in self.dict_mestre.keys() if k.startswith(c_norm + " ") or c_norm.startswith(k + " ")), None)
-            
-        if not chave:
-            return []
-            
-        return [dados["apelido_original"] for dados in self.dict_mestre[chave]["itens"].values()]
+            # Se a IA bater nota >= 95%, é um match quase perfeito!
+            # Exigimos que o nome do cliente tenha mais de uma palavra para "SECRETARIA" não puxar tudo
+            if melhor_score >= 95 and len(cliente_limpo.split()) > 1:
+                return melhor_match, item
+
+            # 4. TESTE DE COBERTURA MATEMÁTICA (Fallback original para Secretarias/Prefeituras)
+            palavras_cliente = set(cliente_limpo.split())
+            stop_words = {"DE", "DA", "DO", "DAS", "DOS", "SECRETARIA", "DEPARTAMENTO", "ESTADUAL", "MUNICIPAL", "CONTRATO", "SEC", "ADM", "P", "M"}
+            palavras_chave_cliente = palavras_cliente - stop_words
+
+            if palavras_chave_cliente:
+                maior_score_fallback = 0.0
+                melhor_match_fallback = None
+
+                for c in opcoes_permitidas:
+                    contrato_limpo = normalizar(str(c)).replace('-', ' ').replace('/', ' ')
+                    palavras_chave_contrato = set(contrato_limpo.split()) - stop_words
+                    
+                    if not palavras_chave_contrato: continue
+                    
+                    intersecao = palavras_chave_cliente.intersection(palavras_chave_contrato)
+                    score_cobertura = len(intersecao) / len(palavras_chave_contrato)
+                    
+                    # Cobertura Reversa
+                    score_reverso = len(intersecao) / len(palavras_chave_cliente)
+                    if score_reverso >= 0.99 and len(intersecao) >= 2:
+                        score_cobertura = 1.0
+                    
+                    if score_cobertura == 1.0:
+                        return c, item
+                        
+                    if score_cobertura > 0.7 and score_cobertura > maior_score_fallback:
+                        maior_score_fallback = score_cobertura
+                        melhor_match_fallback = c
+
+                if melhor_match_fallback:
+                    return melhor_match_fallback, item
+
+        return contrato, item
