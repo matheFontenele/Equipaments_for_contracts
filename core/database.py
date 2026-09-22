@@ -21,11 +21,11 @@ LEGACY_RELATORIO_BANCO_PATH = BASE_DIR / "relatorio_banco.csv"
 @st.cache_resource
 def obter_conexao_legado():
     """Conexão com o banco antigo (Origem dos Equipamentos)"""
-    db_host = os.getenv("DB_LEGADO_HOST", "host.docker.internal")
-    db_port = os.getenv("DB_LEGADO_PORT", "3307")
-    db_name = os.getenv("DB_LEGADO_DATABASE", "aluguel_legado")
-    db_user = os.getenv("DB_LEGADO_USERNAME", "root")
-    db_pass = os.getenv("DB_LEGADO_PASSWORD", "root")
+    db_host = os.getenv("DB_LEGADO_HOST")
+    db_port = os.getenv("DB_LEGADO_PORT")
+    db_name = os.getenv("DB_LEGADO_DATABASE")
+    db_user = os.getenv("DB_LEGADO_USERNAME")
+    db_pass = os.getenv("DB_LEGADO_PASSWORD")
 
     URL_CONEXAO = f"mysql+pymysql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
     return create_engine(URL_CONEXAO, pool_pre_ping=True)
