@@ -21,11 +21,11 @@ LEGACY_RELATORIO_BANCO_PATH = BASE_DIR / "relatorio_banco.csv"
 @st.cache_resource
 def obter_conexao_legado():
     """Conexão com o banco antigo (Origem dos Equipamentos)"""
-    db_host = os.getenv("DB_HOST")
-    db_port = os.getenv("DB_PORT")
-    db_name = os.getenv("DB_DATABASE")
-    db_user = os.getenv("DB_USERNAME")
-    db_pass = os.getenv("DB_PASSWORD")
+    db_host = os.getenv("DB_LEGADO_HOST", "host.docker.internal")
+    db_port = os.getenv("DB_LEGADO_PORT", "3307")
+    db_name = os.getenv("DB_LEGADO_DATABASE", "aluguel_legado")
+    db_user = os.getenv("DB_LEGADO_USERNAME", "root")
+    db_pass = os.getenv("DB_LEGADO_PASSWORD", "root")
 
     URL_CONEXAO = f"mysql+pymysql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
     return create_engine(URL_CONEXAO, pool_pre_ping=True)
@@ -33,11 +33,11 @@ def obter_conexao_legado():
 @st.cache_resource
 def obter_conexao_novo():
     """Conexão com o banco novo (Origem dos Contratos e Itens)"""
-    db_host = os.getenv("DB_NOVO_HOST")
-    db_port = os.getenv("DB_NOVO_PORT")
-    db_name = os.getenv("DB_NOVO_DATABASE")
-    db_user = os.getenv("DB_NOVO_USERNAME")
-    db_pass = os.getenv("DB_NOVO_PASSWORD")
+    db_host = os.getenv("DB_NOVO_HOST", "host.docker.internal")
+    db_port = os.getenv("DB_NOVO_PORT", "3307")
+    db_name = os.getenv("DB_NOVO_DATABASE", "controle-interno")
+    db_user = os.getenv("DB_NOVO_USERNAME", "root")
+    db_pass = os.getenv("DB_NOVO_PASSWORD", "root")
 
     URL_CONEXAO = f"mysql+pymysql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
     return create_engine(URL_CONEXAO, pool_pre_ping=True)
@@ -78,31 +78,33 @@ def buscar_dados_por_orgao(engine_legado, lista_ids):
     lista_ids_str = ", ".join(str(i) for i in lista_ids)
     
     query = f"""
-        WITH UltimosMovimentos AS (
-            SELECT
-                movi.equipamento_id,
-                mov.cliente_id,
-                mov.data,
-                ROW_NUMBER() OVER(PARTITION BY movi.equipamento_id ORDER BY mov.data DESC, mov.id DESC) as rn
-            FROM aluguel_movimento_itens movi
-            INNER JOIN aluguel_movimento mov ON movi.movimento_id = mov.id
-            WHERE mov.deleted_at IS NULL AND movi.deleted_at IS NULL
-        )
-        SELECT
-            cli.id AS id_cliente,
-            cli.nome_razao_social AS nome_cliente,
-            alq.id AS id_equipamento,
-            alq.numero AS tombo,
-            alq.nome AS nome_equipamentos,
-            cli.orgao_id AS orgao_id,
-            um.data AS data
+        SELECT 
+            cli.id AS id_cliente, 
+            cli.nome_razao_social AS nome_cliente, 
+            alq.id AS id_equipamento, 
+            alq.numero AS tombo, 
+            alq.nome AS nome_equipamentos, 
+            cli.orgao_id AS orgao_id, 
+            mov.data AS data 
         FROM aluguel_equipamentos alq
-        -- Junta com a CTE pegando apenas a linha onde rn = 1 (O último movimento)
-        INNER JOIN UltimosMovimentos um ON alq.id = um.equipamento_id AND um.rn = 1
-        INNER JOIN aluguel_clientes cli ON um.cliente_id = cli.id
+        INNER JOIN aluguel_movimento_itens movi ON movi.equipamento_id = alq.id
+        INNER JOIN aluguel_movimento mov       ON movi.movimento_id = mov.id
+        INNER JOIN aluguel_clientes cli        ON mov.cliente_id = cli.id
         WHERE alq.deleted_at IS NULL 
-          AND alq.situacao_id = 1
-          AND cli.orgao_id IN ({lista_ids_str});
+        AND mov.deleted_at IS NULL
+        AND movi.deleted_at IS NULL
+        AND alq.situacao_id = 1 
+        AND cli.orgao_id IN ({lista_ids_str})
+        AND mov.id = (
+            SELECT mov2.id
+            FROM aluguel_movimento_itens movi2
+            INNER JOIN aluguel_movimento mov2 ON movi2.movimento_id = mov2.id
+            WHERE movi2.equipamento_id = alq.id
+                AND mov2.deleted_at IS NULL
+                AND movi2.deleted_at IS NULL
+            ORDER BY mov2.data DESC, mov2.id DESC
+            LIMIT 1
+        )
     """
     return pd.read_sql(query, con=engine_legado)
 
