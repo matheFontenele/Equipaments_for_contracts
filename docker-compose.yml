@@ -26,7 +26,8 @@ services:
     
     # 1. INJETA AS VARIÁVEIS DE AMBIENTE DIRETAMENTE DO ARQUIVO
     env_file:
-      - .env 
+      - path: .env
+        required: false
       
     # 2. FORÇA O HOT-RELOAD DO STREAMLIT DENTRO DO DOCKER
     environment:
