@@ -23,6 +23,8 @@ locks_parquet/
 # VARIÁVEIS DE AMBIENTE / SEGURANÇA
 # ==========================================
 .env
+docker/mysql/init/*
+!docker/mysql/init/.gitkeep
 
 # ==========================================
 # PYTHON & AMBIENTE VIRTUAL

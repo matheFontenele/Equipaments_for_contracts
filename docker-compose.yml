@@ -1,4 +1,23 @@
 services:
+  banco-novo:
+    image: mysql:8.4
+    container_name: mysql_banco_novo
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_NOVO_PASSWORD:-root}
+      MYSQL_DATABASE: ${DB_NOVO_DATABASE:-controle-interno}
+    ports:
+      - "${DB_NOVO_PORTA_HOST:-3307}:3306"
+    volumes:
+      - banco_novo_data:/var/lib/mysql
+      - ./docker/mysql/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    restart: unless-stopped
+
   app-automacao:
     build: .
     container_name: streamlit_automacao_contratos
@@ -13,6 +32,11 @@ services:
     environment:
       - STREAMLIT_SERVER_RUN_ON_SAVE=true
       - STREAMLIT_SERVER_FILE_WATCHER_TYPE=poll
+      - DB_NOVO_HOST=banco-novo
+      - DB_NOVO_PORT=3306
+      - DB_NOVO_DATABASE=${DB_NOVO_DATABASE:-controle-interno}
+      - DB_NOVO_USERNAME=root
+      - DB_NOVO_PASSWORD=${DB_NOVO_PASSWORD:-root}
     
     # 3. GARANTE QUE O CONTÊINER CONSIGA ENXERGAR O BANCO LOCAL (CASO NECESSÁRIO)
     extra_hosts:
@@ -23,3 +47,10 @@ services:
       - .:/app
       
     restart: unless-stopped
+
+    depends_on:
+      banco-novo:
+        condition: service_healthy
+
+volumes:
+  banco_novo_data:

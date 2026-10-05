@@ -55,6 +55,22 @@ O `docker-compose.yml` ja possui `extra_hosts` para resolver `host.docker.intern
 
 Por seguranca, mantenha o `.env` fora do Git e prefira um usuario MySQL com permissoes somente de leitura.
 
+## Banco novo local com Docker
+
+O Compose sobe um MySQL 8.4 separado para o banco novo. A aplicacao acessa esse banco pela rede interna do Compose (`banco-novo:3306`); do host, ele fica disponivel em `localhost:3307`.
+
+Coloque o dump SQL em `docker/mysql/init/` antes de subir os containers. Arquivos `.sql`, `.sql.gz` e scripts executaveis nessa pasta sao processados pelo MySQL somente quando o volume do banco e criado pela primeira vez. O banco inicial e `controle-interno` (configuravel por `DB_NOVO_DATABASE` no `.env`). O dump deve criar/importar as tabelas nesse banco.
+
+```bash
+mkdir -p docker/mysql/init
+cp /caminho/para/seu-dump.sql docker/mysql/init/01-dump.sql
+docker compose up --build
+```
+
+Para conectar com um cliente MySQL no host, use `localhost:3307`, usuario `root` e a senha `DB_NOVO_PASSWORD` (padrao `root`). Para reinicializar e importar novamente o dump, pare os containers e remova **somente o volume do banco** com `docker compose down -v`; isso apaga os dados persistidos.
+
+> Dumps sao ignorados pelo Git via `.gitignore`. Evite colocar dados sensiveis sob controle de versao.
+
 ## Execucao com Docker
 
 ```bash

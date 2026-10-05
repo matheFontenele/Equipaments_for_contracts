@@ -7,7 +7,7 @@ from pathlib import Path
 
 _dir_core = os.path.dirname(os.path.abspath(__file__))
 _caminho_env = os.path.abspath(os.path.join(_dir_core, '..', '.env'))
-load_dotenv(_caminho_env, override=True)
+load_dotenv(_caminho_env, override=False)
 
 BASE_DIR = Path(_dir_core).parent
 DOCS_DIR = BASE_DIR / "docs"
