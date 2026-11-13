@@ -1,5 +1,9 @@
 services:
+  # Banco opcional/isolado do Compose. NÃO sobe por padrão (ver profiles abaixo),
+  # pois a aplicação usa o MySQL já existente na rede "controle-interno".
+  # Para subir este banco vazio: docker compose --profile standalone-db up -d banco-novo
   banco-novo:
+    profiles: ["standalone-db"]
     image: mysql:8.4
     container_name: mysql_banco_novo
     environment:
@@ -24,34 +28,42 @@ services:
     ports:
       - "8503:8501"
     
-    # 1. INJETA AS VARIÁVEIS DE AMBIENTE DIRETAMENTE DO ARQUIVO
+    # Injeta as configurações do app sem sobrescrever valores do .env.
     env_file:
       - path: .env
         required: false
-      
-    # 2. FORÇA O HOT-RELOAD DO STREAMLIT DENTRO DO DOCKER
+
+    # Opções específicas do Streamlit; configurações de banco vêm do env_file.
+    # Hosts do MySQL: sobrescrevem o .env para o app falar com o container
+    # "controle-interno-db" pela rede Docker compartilhada (porta interna 3306).
+    # O .env continua válido para execução do app direto no host (localhost:3307).
     environment:
       - STREAMLIT_SERVER_RUN_ON_SAVE=true
       - STREAMLIT_SERVER_FILE_WATCHER_TYPE=poll
-      - DB_NOVO_HOST=banco-novo
-      - DB_NOVO_PORT=3306
-      - DB_NOVO_DATABASE=${DB_NOVO_DATABASE:-controle-interno}
-      - DB_NOVO_USERNAME=root
-      - DB_NOVO_PASSWORD=${DB_NOVO_PASSWORD:-root}
-    
-    # 3. GARANTE QUE O CONTÊINER CONSIGA ENXERGAR O BANCO LOCAL (CASO NECESSÁRIO)
+      - DB_NOVO_HOST=${DB_NOVO_HOST_CONTAINER:-controle-interno-db}
+      - DB_NOVO_PORT=${DB_NOVO_PORT_CONTAINER:-3306}
+      - DB_LEGADO_HOST=${DB_LEGADO_HOST_CONTAINER:-controle-interno-db}
+      - DB_LEGADO_PORT=${DB_LEGADO_PORT_CONTAINER:-3306}
+
+    # Permite ao container alcançar serviços executados na máquina hospedeira.
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    
-    # 4. ESPELHA O CÓDIGO (PERMITE ATUALIZAR O APP SEM REFAZER O BUILD)
+
+    # Rede do MySQL já existente + rede padrão deste Compose.
+    networks:
+      - default
+      - banco-existente
+
+    # Espelha o código para atualizar o app sem refazer o build.
     volumes:
       - .:/app
       
     restart: unless-stopped
 
-    depends_on:
-      banco-novo:
-        condition: service_healthy
-
 volumes:
   banco_novo_data:
+
+networks:
+  banco-existente:
+    name: ${DB_EXISTENTE_NETWORK:-controle-interno-api_controle-interno-network}
+    external: true

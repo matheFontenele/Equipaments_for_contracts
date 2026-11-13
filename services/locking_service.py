@@ -64,6 +64,21 @@ def travar_grupo(aba, contrato_texto, df_grupo_atual):
         df_para_salvar["TRAVADO_EM"] = agora
 
         caminho = montar_nome_parquet(aba, contrato_texto, contract_id, cliente_nome, cliente_id)
+
+        # Um mesmo cliente/contrato pode ser travado em lotes (ex.: equipamentos
+        # faturáveis e, depois, os kits sem item). Mescla com o arquivo existente
+        # para não perder o que já foi travado antes.
+        if os.path.exists(caminho):
+            try:
+                df_anterior = pd.read_parquet(caminho)
+                df_para_salvar = pd.concat([df_anterior, df_para_salvar], ignore_index=True)
+                df_para_salvar = df_para_salvar.drop_duplicates(
+                    subset=["EQUIPAMENTO_ID"], keep="last"
+                )
+            except Exception:
+                # Arquivo ilegível: mantém o comportamento antigo (sobrescreve).
+                pass
+
         df_para_salvar.to_parquet(caminho, index=False)
         total_travado += len(df_cliente)
 

@@ -172,9 +172,40 @@ def renderizar_aba_organizacao(nome_memoria, configuracao_colunas_base, opcoes_c
             width="stretch",
             column_config=configuracao_colunas_base
         )
+        partes_editadas.append(df_extras_editado)
         
         # Se o utilizador alterar o contrato ou remover o status de extra
         if not df_extras_editado.equals(df_extras_exibicao):
             df_aba_atual.loc[df_extras_editado.index, df_extras_editado.columns] = df_extras_editado
             st.session_state[nome_memoria] = aplicar_automacao_no_dataframe(df_aba_atual)
             st.rerun()
+
+    # Ação em lote da organização: consolida as edições dos grupos e de Extra
+    # Itens, atualiza os IDs oficiais e trava todos os equipamentos pendentes.
+    st.divider()
+    total_pendente = len(df_aba_atual)
+    if st.button(
+        f"🔒 Salvar e Travar todos os {total_pendente} itens desta organização",
+        key=f"lock_todos_{nome_memoria}",
+        type="primary",
+        width="stretch",
+        disabled=total_pendente == 0,
+        help="Salva os ajustes feitos nesta página e trava todos os equipamentos pendentes da organização, inclusive os fora do filtro atual.",
+    ):
+        df_para_travar = df_aba_atual.copy()
+        for df_editado in partes_editadas:
+            colunas_validas = [col for col in df_editado.columns if col in df_para_travar.columns]
+            if colunas_validas:
+                df_para_travar.loc[df_editado.index, colunas_validas] = df_editado[colunas_validas]
+
+        df_para_travar = aplicar_automacao_no_dataframe(df_para_travar)
+        st.session_state[nome_memoria] = df_para_travar
+
+        total_travado = 0
+        contratos = df_para_travar["CONTRATO"].replace(r"^\s*$", np.nan, regex=True).fillna("SEM CONTRATO")
+        for contrato, indices in contratos.groupby(contratos).groups.items():
+            df_grupo_travar = df_para_travar.loc[indices].copy()
+            total_travado += travar_grupo(nome_memoria, contrato, df_grupo_travar)
+
+        st.success(f"🔒 {total_travado} equipamento(s) salvos e travados em {nome_memoria}.")
+        st.rerun()

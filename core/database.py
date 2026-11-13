@@ -33,11 +33,11 @@ def obter_conexao_legado():
 @st.cache_resource
 def obter_conexao_novo():
     """Conexão com o banco novo (Origem dos Contratos e Itens)"""
-    db_host = os.getenv("DB_NOVO_HOST", "host.docker.internal")
-    db_port = os.getenv("DB_NOVO_PORT", "3307")
-    db_name = os.getenv("DB_NOVO_DATABASE", "controle-interno")
-    db_user = os.getenv("DB_NOVO_USERNAME", "root")
-    db_pass = os.getenv("DB_NOVO_PASSWORD", "root")
+    db_host = os.environ["DB_NOVO_HOST"]
+    db_port = os.environ["DB_NOVO_PORT"]
+    db_name = os.environ["DB_NOVO_DATABASE"]
+    db_user = os.environ["DB_NOVO_USERNAME"]
+    db_pass = os.environ["DB_NOVO_PASSWORD"]
 
     URL_CONEXAO = f"mysql+pymysql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
     return create_engine(URL_CONEXAO, pool_pre_ping=True)
@@ -84,7 +84,7 @@ def buscar_dados_por_orgao(engine_legado, lista_ids):
             alq.id AS id_equipamento, 
             alq.numero AS tombo, 
             alq.nome AS nome_equipamentos, 
-            cli.orgao_id AS orgao_id, 
+            mov.orgao_id AS orgao_id,
             mov.data AS data 
         FROM aluguel_equipamentos alq
         INNER JOIN aluguel_movimento_itens movi ON movi.equipamento_id = alq.id
@@ -94,7 +94,7 @@ def buscar_dados_por_orgao(engine_legado, lista_ids):
         AND mov.deleted_at IS NULL
         AND movi.deleted_at IS NULL
         AND alq.situacao_id = 1 
-        AND cli.orgao_id IN ({lista_ids_str})
+        AND mov.orgao_id IN ({lista_ids_str})
         AND mov.id = (
             SELECT mov2.id
             FROM aluguel_movimento_itens movi2

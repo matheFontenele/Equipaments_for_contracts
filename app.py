@@ -19,7 +19,15 @@ engine_novo = obter_conexao_novo()
 # =======================================================================
 if "df_contratos_banco" not in st.session_state:
     # Executa a query no banco novo e salva em memória
-    st.session_state["df_contratos_banco"] = carregar_contratos_do_banco(engine_novo)
+    try:
+        st.session_state["df_contratos_banco"] = carregar_contratos_do_banco(engine_novo)
+    except Exception as e:
+        st.session_state["df_contratos_banco"] = pd.DataFrame()
+        st.error(
+            "Não foi possível conectar ao Banco Novo. "
+            "Verifique se o MySQL está no ar e se as variáveis DB_NOVO_* apontam "
+            f"para o host/porta corretos.\n\nDetalhe: {e}"
+        )
 
 if "dict_mestre" not in st.session_state:
     # Cria a árvore de relacionamentos de altíssima performance

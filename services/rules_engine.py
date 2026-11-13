@@ -8,6 +8,10 @@ class MotorDeRegras:
     def __init__(self, opcoes_contratos, dict_mestre):
         self.opcoes_contratos = opcoes_contratos
         self.dict_mestre = dict_mestre
+        # True quando o contrato da linha veio de um DE/PARA explícito.
+        # Nesse caso o vínculo é determinístico e não deve ser descartado
+        # pelo escudo de kits.
+        self._vinculo_explicito = False
         
         # 🧠 O CÉREBRO
         self.regras = [
@@ -41,6 +45,8 @@ class MotorDeRegras:
             if ignorado in cliente_tratado or cliente_tratado in ignorado:
                 return pd.Series([None, None])
 
+        self._vinculo_explicito = False
+
         # 2. MOTOR DE REGRAS
         for regra in self.regras:
             # Se já tem os dois, para de tentar regras novas!
@@ -57,6 +63,10 @@ class MotorDeRegras:
             # Se a IA achou um item oficial faturável no contrato, concedemos o salvo-conduto.
             if not self._vazio(item_atual):
                 pass 
+            elif self._vinculo_explicito:
+                # Cliente mapeado por DE/PARA explícito: mantém o contrato mesmo
+                # sendo kit sem item previsto. O item fica vazio para escolha manual.
+                pass
             else:
                 # É kit e não tem item oficial? Ejeta!
                 return pd.Series([None, None])
@@ -69,11 +79,25 @@ class MotorDeRegras:
 
     def _regra_de_para_explicito(self, cliente, equip_nome, contrato, item):
         if self._vazio(contrato):
-            cliente_tratado = cliente.strip()
+            # Comparação sem acentos/caixa: evita que "ALCANTARA" (sem acento)
+            # deixe de casar com "ALCÂNTARA" em qualquer uma das pontas.
+            cliente_norm = normalizar(cliente)
+            if not cliente_norm:
+                return contrato, item
+
             for chave_suja, contrato_correto in DE_PARA_CLIENTES.items():
-                if chave_suja in cliente_tratado or cliente_tratado in chave_suja:
+                chave_norm = normalizar(chave_suja)
+                if not chave_norm:
+                    continue
+
+                if chave_norm in cliente_norm or cliente_norm in chave_norm:
+                    alvo_norm = normalizar(contrato_correto)
                     for opcao in self.opcoes_contratos:
-                        if str(opcao).upper().strip() == contrato_correto.upper().strip():
+                        if self._vazio(opcao):
+                            continue
+                        if normalizar(opcao) == alvo_norm:
+                            # Vínculo determinístico: protegido do escudo de kits.
+                            self._vinculo_explicito = True
                             return opcao, item
         return contrato, item
     

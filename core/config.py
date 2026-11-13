@@ -46,7 +46,12 @@ CLIENTES_IGNORADOS = [
 DE_PARA_CLIENTES = {
     "INSTITUTO DE PREVIDENCIA E ASSISTENCIA DO MUNICIPIO - IPAM 2026" : "IPAM",
     "PM SÃO LUIS / SECRETARIA DE INFORMACAO E TECNOLOGIA - SEMIT 2026" : "SECRETARIA MUNICIPAL DE INFORMAÇÃO E TECNOLOGIA - SEMIT",
-    "MULTINTEGRADA": "MULTINTEGRADA LTDA"
+    "MULTINTEGRADA": "MULTINTEGRADA LTDA",
+    # Centro de Lançamento de Alcântara: cobre todas as variações do legado
+    # (CLA, BASE SÃO LUIS, BASE RAPOSA, BASE ALCANTARA, RESERVA e o nome do
+    # Ministério da Defesa), pois o match por similaridade ficava no limite
+    # (0,75) por causa da sigla "CLA" ausente no nome do cliente.
+    "CENTRO DE LANÇAMENTO DE ALCÂNTARA" : "CENTRO DE LANÇAMENTO DE ALCÂNTARA - CLA"
 }
 
 # Termos padronizados para substituição pré-análise

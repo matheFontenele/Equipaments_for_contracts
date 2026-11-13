@@ -29,35 +29,39 @@ Equipamentos sem contrato ou sem item tambem podem ser salvos em Parquet. Nesses
 
 ## Configuracao
 
-A conexao com o banco e montada em [`core/database.py`](core/database.py) a partir de variaveis de ambiente carregadas do arquivo `.env` na raiz do projeto.
+A conexao com os bancos e montada em [`core/database.py`](core/database.py) a partir de variaveis de ambiente carregadas do arquivo `.env` na raiz do projeto. Comece copiando o exemplo seguro:
 
-Crie um `.env` com este formato:
-
-```env
-DB_HOST=localhost
-DB_PORT=3307
-DB_DATABASE=aluguel_legado
-DB_USERNAME=root
-DB_PASSWORD=root
+```bash
+cp .env.example .env
 ```
 
-Quando o app roda via Docker e o MySQL esta na maquina hospedeira, use:
+Configure as variaveis `DB_LEGADO_HOST`, `DB_LEGADO_PORT`, `DB_LEGADO_DATABASE`, `DB_LEGADO_USERNAME` e `DB_LEGADO_PASSWORD` para o banco legado, e `DB_NOVO_HOST`, `DB_NOVO_PORT`, `DB_NOVO_DATABASE`, `DB_NOVO_USERNAME` e `DB_NOVO_PASSWORD` para o banco novo. O arquivo `.env` e ignorado pelo Git; substitua todos os valores de exemplo e mantenha nele as credenciais reais.
+
+Exemplo de configuracao do banco novo local quando o app roda diretamente no host:
 
 ```env
-DB_HOST=host.docker.internal
-DB_PORT=3307
-DB_DATABASE=aluguel_legado
-DB_USERNAME=root
-DB_PASSWORD=root
+DB_NOVO_HOST=localhost
+DB_NOVO_PORT=3307
+DB_NOVO_DATABASE=controle-interno
+DB_NOVO_USERNAME=root
+DB_NOVO_PASSWORD=senha-configurada-localmente
 ```
 
-O `docker-compose.yml` ja possui `extra_hosts` para resolver `host.docker.internal` em Linux.
+O endereco depende de onde o app executa e de onde esta o MySQL. Para o MySQL `banco-novo` deste Compose, use `localhost:3307` ao executar o app no host, mas `banco-novo:3306` ao executar o app em container na rede do Compose. Portanto, ajuste `DB_NOVO_HOST` e `DB_NOVO_PORT` no `.env` conforme o contexto antes de iniciar o app. Se o banco estiver em outro servidor, informe um host/porta acessivel a partir do ambiente do app; nao presuma que o nome do servico Compose ou `host.docker.internal` seja valido para um servidor remoto. As credenciais nao precisam mudar entre contextos, a menos que o servidor exija.
 
-Por seguranca, mantenha o `.env` fora do Git e prefira um usuario MySQL com permissoes somente de leitura.
+```env
+DB_NOVO_HOST=banco-novo
+DB_NOVO_PORT=3306
+DB_NOVO_DATABASE=controle-interno
+DB_NOVO_USERNAME=root
+DB_NOVO_PASSWORD=senha-configurada-localmente
+```
+
+O Compose injeta o `.env` no app sem substituir os valores `DB_NOVO_*`. Para o banco legado, use igualmente um host e porta acessiveis a partir do ambiente em que o app executa. Por seguranca, prefira um usuario MySQL com permissoes somente de leitura quando aplicavel.
 
 ## Banco novo local com Docker
 
-O Compose sobe um MySQL 8.4 separado para o banco novo. A aplicacao acessa esse banco pela rede interna do Compose (`banco-novo:3306`); do host, ele fica disponivel em `localhost:3307`.
+O Compose sobe um MySQL 8.4 separado para o banco novo. Configure `DB_NOVO_DATABASE` e `DB_NOVO_PASSWORD` no `.env`; este ultimo define a senha root do servico MySQL. O app usa os cinco parametros `DB_NOVO_*` do mesmo arquivo. Para o app em container, o banco fica acessivel pela rede interna do Compose em `banco-novo:3306`; para o app executado no host, use `localhost:3307`. O Compose nao forca host, porta, usuario ou senha do app, assim as definicoes do `.env` nao sao sobrescritas.
 
 Coloque o dump SQL em `docker/mysql/init/` antes de subir os containers. Arquivos `.sql`, `.sql.gz` e scripts executaveis nessa pasta sao processados pelo MySQL somente quando o volume do banco e criado pela primeira vez. O banco inicial e `controle-interno` (configuravel por `DB_NOVO_DATABASE` no `.env`). O dump deve criar/importar as tabelas nesse banco.
 
@@ -67,7 +71,7 @@ cp /caminho/para/seu-dump.sql docker/mysql/init/01-dump.sql
 docker compose up --build
 ```
 
-Para conectar com um cliente MySQL no host, use `localhost:3307`, usuario `root` e a senha `DB_NOVO_PASSWORD` (padrao `root`). Para reinicializar e importar novamente o dump, pare os containers e remova **somente o volume do banco** com `docker compose down -v`; isso apaga os dados persistidos.
+Para conectar com um cliente MySQL no host, use `localhost:3307`, usuario definido por `DB_NOVO_USERNAME` (no servico local, normalmente `root`) e a senha `DB_NOVO_PASSWORD`. Para reinicializar e importar novamente o dump, pare os containers e remova **somente o volume do banco** com `docker compose down -v`; isso apaga os dados persistidos.
 
 > Dumps sao ignorados pelo Git via `.gitignore`. Evite colocar dados sensiveis sob controle de versao.
 
@@ -308,9 +312,9 @@ Confirme se `docs/relatorio_banco.csv` existe ou clique em `Atualizar Relatorio 
 Verifique se:
 
 - o `.env` existe;
-- `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME` e `DB_PASSWORD` estao corretos;
+- as variaveis `DB_LEGADO_*` e `DB_NOVO_*` correspondentes estao definidas e corretas;
 - o MySQL aceita conexoes na porta configurada;
-- no Docker, `DB_HOST=host.docker.internal` aponta para a maquina hospedeira;
+- o host/porta do banco sao alcancaveis a partir do contexto do app (`banco-novo:3306` para o MySQL no Compose, `localhost:3307` a partir do host);
 - o firewall permite a conexao.
 
 ### Arquivos-base nao aparecem
