@@ -153,13 +153,13 @@ def construir_tabela_organizacao(df_bruto, aba):
     df_montado = remover_itens_travados(df_montado, aba)
     return df_montado
 
-def sincronizar_todas_as_abas(engine_legado):
+def sincronizar_todas_as_abas(engine_relatorio):
     """
-    Busca os dados de equipamentos do banco legado e monta as abas do Streamlit.
+    Busca os dados de equipamentos na fonte do Relatório Base e monta as abas.
     """
     lista_dfs_brutos = []
     for aba, lista_ids in MAPPINGS.items():
-        df_bruto = buscar_dados_por_orgao(engine_legado, lista_ids)
+        df_bruto = buscar_dados_por_orgao(engine_relatorio, lista_ids)
         df_bruto['aba_origem'] = aba
         lista_dfs_brutos.append(df_bruto)
         st.session_state[aba] = construir_tabela_organizacao(df_bruto, aba)

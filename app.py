@@ -1,6 +1,13 @@
 import streamlit as st
 import pandas as pd
-from core.database import obter_conexao_legado, obter_conexao_novo, carregar_contratos_do_banco, obter_caminho_relatorio_banco
+from core.database import (
+    configuracao_relatorio,
+    obter_conexao_novo,
+    obter_conexao_relatorio,
+    carregar_contratos_do_banco,
+    obter_caminho_relatorio_banco,
+    testar_conexao_relatorio,
+)
 from utils.text_processing import MAPPINGS, nomes_abas_memoria
 from services.dictionary_service import construir_dicionario_mestre
 from components.organization_tab import renderizar_aba_organizacao
@@ -11,7 +18,6 @@ st.set_page_config(page_title="Painel de Equipamentos Alugados", layout="wide")
 # =======================================================================
 # 🔌 INICIALIZAÇÃO DE CONEXÕES COM O BANCO
 # =======================================================================
-engine_legado = obter_conexao_legado()
 engine_novo = obter_conexao_novo()
 
 # =======================================================================
@@ -52,17 +58,40 @@ if "df_relatorio" not in st.session_state:
 # 🔄 MENU LATERAL (SIDEBAR)
 # =======================================================================
 st.sidebar.header("🔄 Sincronizar Banco")
+cfg_relatorio = configuracao_relatorio()
+st.sidebar.caption(
+    "Base do relatório: "
+    f"`{cfg_relatorio['host']}:{cfg_relatorio['port']}/{cfg_relatorio['database']}`  \n"
+    f"Origem: {cfg_relatorio['origem']}"
+)
+
 if st.sidebar.button("⚙️ Atualizar Relatório Base", type="secondary"):
-    with st.sidebar.status("Executando consultas de equipamentos no Legado...", expanded=True) as status:
+    with st.sidebar.status("Consultando equipamentos na base do relatório...", expanded=True) as status:
         try:
             from services.dictionary_service import sincronizar_todas_as_abas
-            # Passamos o motor legado para varrer a base de máquinas!
-            sincronizar_todas_as_abas(engine_legado)
+            # Valida a conexão antes para devolver um erro legível (host/porta).
+            testar_conexao_relatorio()
+            sincronizar_todas_as_abas(obter_conexao_relatorio())
             status.update(label="Sincronização concluída!", state="complete", expanded=False)
             st.rerun()
         except Exception as e:
             status.update(label="Falha na sincronização", state="error", expanded=True)
-            st.sidebar.error(f"Erro: {e}")
+            st.sidebar.error(
+                "Erro ao ler a base do relatório em "
+                f"{cfg_relatorio['host']}:{cfg_relatorio['port']}: {e}"
+            )
+
+if st.sidebar.button("🔌 Testar conexão da base"):
+    try:
+        testar_conexao_relatorio()
+        st.sidebar.success(
+            f"Conexão OK com {cfg_relatorio['host']}:{cfg_relatorio['port']}"
+        )
+    except Exception as e:
+        st.sidebar.error(
+            "Falha ao conectar em "
+            f"{cfg_relatorio['host']}:{cfg_relatorio['port']}: {e}"
+        )
 
 # =======================================================================
 # ⚙️ CONFIGURAÇÃO DE UI E COLUNAS DA TABELA

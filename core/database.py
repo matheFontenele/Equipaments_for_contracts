@@ -1,7 +1,9 @@
 import os
+from urllib.parse import quote_plus
+
 import pandas as pd
 import streamlit as st
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 from pathlib import Path
 
@@ -41,6 +43,57 @@ def obter_conexao_novo():
 
     URL_CONEXAO = f"mysql+pymysql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
     return create_engine(URL_CONEXAO, pool_pre_ping=True)
+
+
+def configuracao_relatorio():
+    """Descreve de onde o botão "Atualizar Relatório Base" lê os equipamentos.
+
+    Se ``DB_RELATORIO_HOST`` estiver definido, a leitura usa essa conexão
+    (ex.: banco legado da máquina de desenvolvimento exposto na rede local).
+    Caso contrário, mantém o comportamento original: ``DB_LEGADO_*``.
+    """
+    prefixo = "DB_RELATORIO" if os.getenv("DB_RELATORIO_HOST") else "DB_LEGADO"
+    origem = (
+        "base externa configurada em DB_RELATORIO_*"
+        if prefixo == "DB_RELATORIO"
+        else "banco legado do próprio servidor (DB_LEGADO_*)"
+    )
+    return {
+        "prefixo": prefixo,
+        "origem": origem,
+        "host": os.getenv(f"{prefixo}_HOST"),
+        "port": os.getenv(f"{prefixo}_PORT"),
+        "database": os.getenv(f"{prefixo}_DATABASE"),
+        "username": os.getenv(f"{prefixo}_USERNAME"),
+        "password": os.getenv(f"{prefixo}_PASSWORD"),
+    }
+
+
+@st.cache_resource
+def obter_conexao_relatorio():
+    """Conexão usada para montar o Relatório Base (equipamentos alugados)."""
+    cfg = configuracao_relatorio()
+    faltando = [campo for campo in ("host", "port", "database", "username") if not cfg[campo]]
+    if faltando:
+        raise RuntimeError(
+            f"Configuração incompleta do Relatório Base ({cfg['prefixo']}_*): "
+            f"faltam {', '.join(faltando)}"
+        )
+
+    url = (
+        f"mysql+pymysql://{quote_plus(str(cfg['username']))}:"
+        f"{quote_plus(str(cfg['password'] or ''))}@"
+        f"{cfg['host']}:{cfg['port']}/{cfg['database']}"
+    )
+    return create_engine(url, pool_pre_ping=True, connect_args={"connect_timeout": 8})
+
+
+def testar_conexao_relatorio():
+    """Abre a conexão do Relatório Base e executa ``SELECT 1``."""
+    engine = obter_conexao_relatorio()
+    with engine.connect() as conexao:
+        conexao.execute(text("SELECT 1"))
+    return configuracao_relatorio()
 
 
 # =======================================================================

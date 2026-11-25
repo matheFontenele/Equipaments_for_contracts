@@ -75,6 +75,49 @@ Para conectar com um cliente MySQL no host, use `localhost:3307`, usuario defini
 
 > Dumps sao ignorados pelo Git via `.gitignore`. Evite colocar dados sensiveis sob controle de versao.
 
+## Relatorio Base a partir do banco local (servidor de testes)
+
+Por padrao, o botao **Atualizar Relatorio Base** consulta o banco legado configurado em `DB_LEGADO_*`. Em um servidor de testes cujo MySQL legado esta incompleto, e possivel apontar apenas essa leitura para o banco legado da maquina de desenvolvimento, sem mexer em `DB_LEGADO_*`:
+
+### 1. Na maquina de desenvolvimento
+
+Crie um usuario MySQL somente leitura e publique o banco na rede local com o servico `db-relay`:
+
+```sql
+CREATE USER 'leitura_legado'@'%' IDENTIFIED BY 'senha-forte';
+GRANT SELECT ON aluguel_legado.* TO 'leitura_legado'@'%';
+FLUSH PRIVILEGES;
+```
+
+No `.env` da maquina de desenvolvimento, informe o IP local usado pelo servidor:
+
+```env
+RELAY_BIND=172.16.0.121
+RELAY_PORTA=3308
+```
+
+```bash
+docker compose --profile relatorio-local up -d db-relay
+```
+
+O relay encaminha `172.16.0.121:3308` para o container `controle-interno-db:3306` na rede `controle-interno`.
+
+### 2. No servidor de testes
+
+No `.env` do servidor, defina a fonte exclusiva do relatorio:
+
+```env
+DB_RELATORIO_HOST=172.16.0.121
+DB_RELATORIO_PORT=3308
+DB_RELATORIO_DATABASE=aluguel_legado
+DB_RELATORIO_USERNAME=leitura_legado
+DB_RELATORIO_PASSWORD=senha-forte
+```
+
+Recrie o container para aplicar o `.env` (`docker compose up -d --no-build app-automacao`). A barra lateral passa a exibir `Base do relatorio: 172.16.0.121:3308/aluguel_legado` e o botao **Testar conexao da base** valida o caminho antes de sincronizar. Se `DB_RELATORIO_HOST` nao estiver definido, nada muda: o botao usa `DB_LEGADO_*`.
+
+> A ponte publica o MySQL na rede local. Use um usuario com `SELECT` apenas e restrinja a porta `3308` ao IP do servidor no firewall, por exemplo: `sudo iptables -I DOCKER-USER -p tcp --dport 3308 ! -s 172.16.0.200 -j DROP`.
+
 ## Execucao com Docker
 
 ```bash

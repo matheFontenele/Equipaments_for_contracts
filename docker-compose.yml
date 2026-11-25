@@ -22,6 +22,21 @@ services:
       start_period: 20s
     restart: unless-stopped
 
+  # Ponte TCP que publica o MySQL local (controle-interno-db) na rede local,
+  # para que o servidor de testes leia o Relatório Base direto do banco desta
+  # máquina. Não sobe por padrão: use --profile relatorio-local.
+  # Defina RELAY_BIND no .env (ex.: 172.16.0.121) e RELAY_PORTA (padrão 3308).
+  db-relay:
+    profiles: ["relatorio-local"]
+    image: alpine/socat:latest
+    container_name: equipamentos_db_relay
+    command: TCP-LISTEN:3306,fork,reuseaddr TCP:controle-interno-db:3306
+    ports:
+      - "${RELAY_BIND:-127.0.0.1}:${RELAY_PORTA:-3308}:3306"
+    networks:
+      - banco-existente
+    restart: unless-stopped
+
   app-automacao:
     build: .
     container_name: streamlit_automacao_contratos
