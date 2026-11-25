@@ -51,7 +51,12 @@ DE_PARA_CLIENTES = {
     # (CLA, BASE SÃO LUIS, BASE RAPOSA, BASE ALCANTARA, RESERVA e o nome do
     # Ministério da Defesa), pois o match por similaridade ficava no limite
     # (0,75) por causa da sigla "CLA" ausente no nome do cliente.
-    "CENTRO DE LANÇAMENTO DE ALCÂNTARA" : "CENTRO DE LANÇAMENTO DE ALCÂNTARA - CLA"
+    "CENTRO DE LANÇAMENTO DE ALCÂNTARA" : "CENTRO DE LANÇAMENTO DE ALCÂNTARA - CLA",
+    # Araçoiaba: o legado grafa a secretaria de infraestrutura como "SEINFRA"
+    # ou "MEIO AMBIENTE", que não casam com o nome oficial do contrato 233
+    # ("INFRAESTRUTURA, URBANISMO E MEIO AMBIENTE") nem por similaridade.
+    "ARACOIABA - SEINFRA": "INFRAESTRUTURA, URBANISMO E MEIO AMBIENTE",
+    "ARACOIABA - MEIO AMBIENTE": "INFRAESTRUTURA, URBANISMO E MEIO AMBIENTE"
 }
 
 # Termos padronizados para substituição pré-análise

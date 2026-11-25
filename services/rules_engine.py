@@ -1,7 +1,7 @@
 import pandas as pd
 import re
 from rapidfuzz import fuzz
-from utils.text_processing import normalizar
+from utils.text_processing import normalizar, tokens_municipio
 from core.config import IS_KIT, DE_PARA_CLIENTES, CLIENTES_IGNORADOS, SUBSTITUICOES_TERMOS, CONTRATOS_POLI_MONO
 
 class MotorDeRegras:
@@ -12,6 +12,9 @@ class MotorDeRegras:
         # Nesse caso o vínculo é determinístico e não deve ser descartado
         # pelo escudo de kits.
         self._vinculo_explicito = False
+
+        # Índice de municípios presentes nos contratos (criado sob demanda)
+        self._municipios_conhecidos = None
         
         # 🧠 O CÉREBRO
         self.regras = [
@@ -118,6 +121,44 @@ class MotorDeRegras:
                         return c, item
         return contrato, item
     
+    def _texto_chave(self, valor):
+        """Texto normalizado (sem acento/pontuação) para comparação de contratos."""
+        return " ".join(re.sub(r"[^A-Z0-9 ]", " ", normalizar(valor)).split())
+
+    def _indice_municipios(self):
+        """Tokens de município que aparecem nos contratos do dicionário mestre."""
+        if self._municipios_conhecidos is None:
+            conhecidos = set()
+            for info in self.dict_mestre.values():
+                conhecidos.update(info.get("municipios") or ())
+            self._municipios_conhecidos = conhecidos
+        return self._municipios_conhecidos
+
+    def _municipios_do_cliente(self, cliente):
+        """Município citado no próprio nome do cliente do equipamento.
+
+        Ex.: 'P M DE BATURITE - GABINETE DO PREFEITO' -> {'BATURITE'}
+        """
+        tokens = tokens_municipio(cliente)
+        if tokens:
+            return tokens
+        # Sem marcador municipal no início, ainda detecta a menção a um
+        # município que existe no banco (ex.: 'SECRETARIA DE SAUDE CAUCAIA').
+        # Nomes de empresa/consórcio/UFSC tendem a não colidir com municípios;
+        # e a guarda só descarta contratos cujo município divergir.
+        palavras = set(re.sub(r"[^A-Z0-9 ]", " ", normalizar(cliente)).split())
+        return palavras & self._indice_municipios()
+
+    def _contrato_do_mesmo_municipio(self, contrato, municipios_cliente):
+        """False apenas quando ambos os lados têm município e eles divergem."""
+        if not municipios_cliente:
+            return True
+        info = self.dict_mestre.get(normalizar(contrato)) or {}
+        municipios_contrato = info.get("municipios") or set()
+        if not municipios_contrato:
+            return True
+        return bool(municipios_contrato & municipios_cliente)
+
     def _regra_contrato_por_similaridade(self, cliente, equip_nome, contrato, item):
         if self._vazio(contrato):
             cliente_limpo = str(cliente).upper().strip()
@@ -126,7 +167,9 @@ class MotorDeRegras:
             for termo_original, substituto in SUBSTITUICOES_TERMOS.items():
                 cliente_limpo = cliente_limpo.replace(termo_original, substituto)
                 
-            cliente_limpo = cliente_limpo.replace('-', ' ').replace('/', ' ').strip()
+            # Comparação sem acento/pontuação: "ASSISTENCIA" casa com
+            # "ASSISTÊNCIA" e "INFRAESTRUTURA," casa com "INFRAESTRUTURA".
+            cliente_limpo = self._texto_chave(cliente_limpo)
             
             # =================================================================
             # 🛡️ FILTRO MT (BLINDAGEM ABSOLUTA)
@@ -146,12 +189,26 @@ class MotorDeRegras:
                 opcoes_permitidas.append(c)
 
             # =================================================================
+            # 🏛️ GUARDA DE MUNICÍPIO
+            # Nomes genéricos (GABINETE DO PREFEITO, CONTROLADORIA GERAL,
+            # SECRETARIA DE ASSISTÊNCIA SOCIAL...) existem em vários
+            # municípios. Se o cliente cita um município conhecido, só aceita
+            # contratos do mesmo município (ou sem município identificável).
+            # =================================================================
+            municipios_cliente = self._municipios_do_cliente(cliente)
+            if municipios_cliente:
+                opcoes_permitidas = [
+                    c for c in opcoes_permitidas
+                    if self._contrato_do_mesmo_municipio(c, municipios_cliente)
+                ]
+
+            # =================================================================
             # 1. TESTE RÁPIDO: Substring Exata Bidirecional
             # =================================================================
             for c in opcoes_permitidas:
-                contrato_limpo = str(c).upper().replace('-', ' ').replace('/', ' ').strip()
+                contrato_limpo = self._texto_chave(c)
                 
-                if contrato_limpo in cliente_limpo:
+                if contrato_limpo and contrato_limpo in cliente_limpo:
                     return c, item
                     
                 if len(cliente_limpo) >= 4 and cliente_limpo in contrato_limpo:
@@ -161,16 +218,18 @@ class MotorDeRegras:
             # 2. TESTE DE COBERTURA: Fatias de palavras com Cobertura Reversa
             # =================================================================
             palavras_cliente = set(cliente_limpo.split())
-            stop_words = {"DE", "DA", "DO", "DAS", "DOS", "SECRETARIA", "DEPARTAMENTO", "ESTADUAL", "MUNICIPAL", "CONTRATO", "SEC", "ADM", "P", "M"}
-            palavras_chave_cliente = palavras_cliente - stop_words
+            stop_words = {"DE", "DA", "DO", "DAS", "DOS", "SECRETARIA", "DEPARTAMENTO", "ESTADUAL", "MUNICIPAL", "PREFEITURA", "PREF", "MUNICIPIO", "CONTRATO", "SEC", "ADM", "P", "M"}
+            palavras_chave_cliente = {p for p in palavras_cliente - stop_words
+                                      if not p.isdigit() and len(p) > 1}
 
             melhor_match = None
             maior_score = 0.0
 
             for c in opcoes_permitidas:
-                contrato_limpo = str(c).upper().replace('-', ' ').replace('/', ' ')
+                contrato_limpo = self._texto_chave(c)
                 palavras_contrato = set(contrato_limpo.split())
-                palavras_chave_contrato = palavras_contrato - stop_words
+                palavras_chave_contrato = {p for p in palavras_contrato - stop_words
+                                           if not p.isdigit() and len(p) > 1}
                 
                 if not palavras_chave_contrato: continue
                 

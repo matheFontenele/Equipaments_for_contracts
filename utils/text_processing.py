@@ -31,6 +31,75 @@ def normalizar(texto):
     texto_norm = "".join([c for c in texto_norm if unicodedata.category(c) != "Mn"])
     return " ".join(texto_norm.split()).upper()
 
+# ==============================================================================
+# MUNICÍPIO — GUARDA CONTRA CASAMENTO ENTRE MUNICÍPIOS DIFERENTES
+# ==============================================================================
+_PREFIXO_MUNICIPAL = {"PREFEITURA", "PREF", "P", "M", "PM", "MUNICIPAL", "MUNICIPIO", "GOVERNO"}
+# Só aliases que começam assim identificam município com segurança.
+# UFSC, consórcios, empresas, cartórios e secretarias ficam de fora.
+_MARCADORES_MUNICIPAIS = {"PREFEITURA", "PREF", "PM", "MUNICIPIO", "GOVERNO"}
+_CONECTORES_MUNICIPIO = {"DE", "DO", "DA", "DOS", "DAS", "EM"}
+_UFS = {"AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES", "GO", "MA", "MG", "MS",
+        "MT", "PA", "PB", "PE", "PI", "PR", "RJ", "RN", "RO", "RR", "RS", "SC",
+        "SE", "SP", "TO"}
+# Palavras que não distinguem município (ou que indicam que o alias é de secretaria)
+_NAO_MUNICIPAL = {
+    "SECRETARIA", "SEC", "DEPARTAMENTO", "FUNDO", "CAMARA", "CONTROLADORIA",
+    "GABINETE", "HOSPITAL", "INSTITUTO", "AUTARQUIA", "SAAE", "COORDENADORIA",
+    "SUPERINTENDENCIA", "PROCURADORIA", "OUVIDORIA", "ESCOLA", "CENTRO",
+    "UNIDADE", "ADMINISTRACAO", "FINANCAS", "EDUCACAO", "SAUDE", "ASSISTENCIA",
+    "TRABALHO", "CULTURA", "ESPORTE", "OBRAS", "INFRAESTRUTURA", "URBANISMO",
+    "PLANEJAMENTO", "DESENVOLVIMENTO", "RURAL", "AGRICULTURA", "SEGURANCA",
+    "TRANSITO", "TURISMO", "MEIO", "AMBIENTE", "ESTADO", "UNIAO", "FEDERAL",
+    # Marcadores de situação/anotação que aparecem grudados no município
+    "CONTRATO", "ENCERRADO", "RECOLHIDO", "ATIVO", "REVOGADO", "VIGENTE",
+    "DEVOLVIDO", "DEVOLVIDOS", "ANOS", "EQUIP",
+}
+_GENERICOS_MUNICIPIO = {"DE", "DO", "DA", "DOS", "DAS", "SAO", "SANTA", "SANTO",
+                        "NORTE", "SUL", "LESTE", "OESTE", "NOVA", "NOVO",
+                        "GRANDE", "PEQUENO", "PEQUENA"}
+
+def tokens_municipio(alias):
+    """Extrai tokens distintivos do município a partir do alias do cliente do contrato.
+
+    Ex.: 'PREFEITURA MUNICIPAL DE MARANGUAPE' -> {'MARANGUAPE'}
+         'P M DE JUAZEIRO DO NORTE'           -> {'JUAZEIRO'}
+         'SECRETARIA DE SAUDE - FMS'          -> set()  (não identificável)
+         'UFSC - FLORIANOPOLIS'               -> set()  (não é município)
+    """
+    texto = normalizar(alias)
+    if not texto:
+        return set()
+
+    # Nome do órgão após separadores (" - ", "/", ",") não identifica município
+    texto = re.split(r"\s*[-/,]\s*", texto)[0]
+    # Pontuação vira espaço para lidar com "P.M. DE ARACOIABA" e "P. M. DE X"
+    tokens = re.sub(r"[^A-Z0-9 ]", " ", texto).split()
+
+    # Sem marcador municipal no início, o alias não é de prefeitura
+    if not tokens:
+        return set()
+    if tokens[0] not in _MARCADORES_MUNICIPAIS:
+        if not (tokens[0] == "P" and len(tokens) > 1 and tokens[1] == "M"):
+            return set()
+
+    while tokens and tokens[0] in _PREFIXO_MUNICIPAL:
+        tokens.pop(0)
+    while tokens and tokens[0] in _CONECTORES_MUNICIPIO:
+        tokens.pop(0)
+    while tokens and (tokens[-1] in _UFS or re.fullmatch(r"(19|20)\d{2}", tokens[-1])):
+        tokens.pop()
+
+    # O nome do município termina no primeiro token que não pode ser município
+    # (ex.: "P M DE INDEPENDENCIA CONTRATO ENCERRADO ..." -> INDEPENDENCIA).
+    corte = next((i for i, tok in enumerate(tokens) if tok in _NAO_MUNICIPAL), len(tokens))
+    tokens = tokens[:corte]
+
+    if not tokens:
+        return set()
+
+    return {tok for tok in tokens if tok not in _GENERICOS_MUNICIPIO and len(tok) > 1}
+
 def valor_seguro_para_texto(valor):
     if pd.isna(valor):
         return ""

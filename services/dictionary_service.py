@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import streamlit as st
 
-from utils.text_processing import normalizar, valor_seguro_para_texto, MAPPINGS
+from utils.text_processing import normalizar, valor_seguro_para_texto, tokens_municipio, MAPPINGS
 from core.database import RELATORIO_BANCO_PATH, buscar_dados_por_orgao
 from services.locking_service import remover_itens_travados
 
@@ -30,8 +30,15 @@ def construir_dicionario_mestre(df_banco):
             dict_map[c_norm] = {
                 "id": contrato_id,
                 "nome_original": contrato_nome,
+                "municipios": set(),
                 "itens": {}
             }
+
+        # Município do cliente do contrato: evita casar, por exemplo, o
+        # "GABINETE DO PREFEITO" de Maranguape com o cliente de Baturité.
+        dict_map[c_norm]["municipios"].update(
+            tokens_municipio(row.get("cutomer_name"))
+        )
             
         # 2. Adiciona o Item (se existir) atrelado ao Contrato
         if pd.notna(item_nome) and item_nome != "":
