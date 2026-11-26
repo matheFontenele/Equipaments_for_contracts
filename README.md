@@ -208,6 +208,25 @@ Cada aba representa uma empresa (`ALUCOM`, `IP SERVICOS`, `MOREIA`, `AS SISTEMAS
 
 Como o casamento mudou, lotes gravados antes desta regra podem continuar com o contrato antigo. Rode `python batch_parquets.py --limpar` (quando aplicavel) ou use a aba `Itens Travados` para destravar e regerar os lotes afetados.
 
+### Classificacao de kit e avulso
+
+A tabela de cada organizacao tem tres colunas marcaveis (`Sim` = marcado), editaveis pelo usuario:
+
+| Coluna | Significado |
+| --- | --- |
+| `IS_KIT` | O equipamento e um kit. Informativo: nao dispara nenhuma regra. |
+| `IS_EXTRA_KIT` | Item extra, fora do escopo do contrato. |
+| `IS_AVULSO` | Equipamento vendido avulso. |
+
+Regras aplicadas em `services/dictionary_service.py:aplicar_regras_flags`, chamada por `aplicar_automacao_no_dataframe`:
+
+1. Quando `ITEM_DO_CONTRATO` passa de vazio para preenchido, `IS_EXTRA_KIT` e `IS_AVULSO` viram `Nao` automaticamente.
+2. Se depois o usuario mudar `IS_EXTRA_KIT` ou `IS_AVULSO` para `Nao` (vindo de `Sim`), `ITEM_DO_CONTRATO` e `CONTRACT_ITEM_ID` sao apagados (`None`).
+
+Sao regras de evento, nao invariantes: dependem do estado anterior da linha (`df_anterior`). Na carga inicial e no batch, sem estado anterior, apenas a regra 1 e aplicada e somente onde a flag ainda esta vazia, para nao sobrescrever classificacoes ja existentes.
+
+`TIPO_EQUIPAMENTO` nao existe mais na tabela nem nos Parquets.
+
 ## Arquivos de entrada
 
 Os arquivos podem ficar em `docs/` ou, por compatibilidade, na raiz do projeto. Quando houver `.xlsx` e `.csv` com o mesmo nome-base, o `.xlsx` tem prioridade.
@@ -316,10 +335,12 @@ ORGAO_ID
 CONTRACT_ID
 CONTRATO
 ITEM_DO_CONTRATO
+IS_EXTRA_KIT
+IS_KIT
+IS_AVULSO
 DESCRICAO_ITEM
 QUANTIDADE_ITEM_NO_CONTRATO
 ID_EVENTO
-TIPO_EQUIPAMENTO
 ORGAO
 TRAVADO_EM
 ```

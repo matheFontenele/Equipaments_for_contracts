@@ -8,6 +8,10 @@ from services.rules_engine import MotorDeRegras
 
 def renderizar_aba_organizacao(nome_memoria, configuracao_colunas_base, opcoes_contratos):
     df_aba_atual = st.session_state[nome_memoria]
+    # Snapshot do estado antes das edições desta execução: permite detectar
+    # quando o usuário muda IS_EXTRA_KIT/IS_AVULSO para "Não" (o item de
+    # contrato deve ser apagado).
+    df_estado_anterior = df_aba_atual.copy()
     qtd_travados = len(obter_ids_travados(nome_memoria))
 
     if qtd_travados > 0:
@@ -135,24 +139,35 @@ def renderizar_aba_organizacao(nome_memoria, configuracao_colunas_base, opcoes_c
                     
                     # Atualiza diretamente via IA
                     df_aba_atual.loc[df_editado_grupo.index, df_editado_grupo.columns] = df_editado_grupo
-                    st.session_state[nome_memoria] = aplicar_automacao_no_dataframe(df_aba_atual, nome_memoria)
+                    st.session_state[nome_memoria] = aplicar_automacao_no_dataframe(
+                        df_aba_atual, nome_memoria, df_anterior=df_estado_anterior
+                    )
                     st.rerun()
 
                 if clicou_limpar:
                     df_aba_atual.loc[df_editado_grupo.index, ['CONTRATO', 'ITEM_DO_CONTRATO', 'CONTRACT_ID', 'CONTRACT_ITEM_ID']] = None
-                    st.session_state[nome_memoria] = aplicar_automacao_no_dataframe(df_aba_atual, nome_memoria)
+                    st.session_state[nome_memoria] = aplicar_automacao_no_dataframe(
+                        df_aba_atual, nome_memoria, df_anterior=df_estado_anterior
+                    )
                     st.rerun()
 
                 if clicou_atualizar:
                     # Salva APENAS as modificações manuais deste contrato no banco de memória
                     df_aba_atual.loc[df_editado_grupo.index, df_editado_grupo.columns] = df_editado_grupo
-                    st.session_state[nome_memoria] = aplicar_automacao_no_dataframe(df_aba_atual, nome_memoria)
+                    st.session_state[nome_memoria] = aplicar_automacao_no_dataframe(
+                        df_aba_atual, nome_memoria, df_anterior=df_estado_anterior
+                    )
                     st.rerun()
 
                 if clicou_travar:
                     if houve_edicao_manual:
                         df_aba_atual.loc[df_editado_grupo.index, df_editado_grupo.columns] = df_editado_grupo
-                        st.session_state[nome_memoria] = aplicar_automacao_no_dataframe(df_aba_atual, nome_memoria)
+                        st.session_state[nome_memoria] = aplicar_automacao_no_dataframe(
+                            df_aba_atual, nome_memoria, df_anterior=df_estado_anterior
+                        )
+                        # Trava o que ficou válido após as regras (IDs e flags),
+                        # não o rascunho cru do editor.
+                        df_editado_grupo = st.session_state[nome_memoria].loc[df_editado_grupo.index]
                         
                     contrato_arquivo = "SEM CONTRATO" if grupo == SEM_CONTRATO else grupo
                     qtd_travada = travar_grupo(nome_memoria, contrato_arquivo, df_editado_grupo)
@@ -167,7 +182,9 @@ def renderizar_aba_organizacao(nome_memoria, configuracao_colunas_base, opcoes_c
         st.markdown("### 📦 Extra Itens (Fora do Escopo do Contrato)")
         st.info("Estes equipamentos pertencem a categorias de Kit (Monitores, Estabilizadores, etc.), porém os contratos selecionados não possuem esses itens previstos em contrato. Você pode editá-los manualmente aqui.")
         
-        df_extras_exibicao = df_extras.drop(columns=["IS_EXTRA_KIT"], errors="ignore")
+        # A coluna IS_EXTRA_KIT fica visível: desmarcar ("Não") devolve o
+        # equipamento à lista principal e apaga o item de contrato (regra 2).
+        df_extras_exibicao = df_extras.copy()
         
         df_extras_editado = st.data_editor(
             df_extras_exibicao,
@@ -180,7 +197,9 @@ def renderizar_aba_organizacao(nome_memoria, configuracao_colunas_base, opcoes_c
         # Se o utilizador alterar o contrato ou remover o status de extra
         if not df_extras_editado.equals(df_extras_exibicao):
             df_aba_atual.loc[df_extras_editado.index, df_extras_editado.columns] = df_extras_editado
-            st.session_state[nome_memoria] = aplicar_automacao_no_dataframe(df_aba_atual, nome_memoria)
+            st.session_state[nome_memoria] = aplicar_automacao_no_dataframe(
+                df_aba_atual, nome_memoria, df_anterior=df_estado_anterior
+            )
             st.rerun()
 
     # Ação em lote da organização: consolida as edições dos grupos e de Extra
@@ -201,7 +220,9 @@ def renderizar_aba_organizacao(nome_memoria, configuracao_colunas_base, opcoes_c
             if colunas_validas:
                 df_para_travar.loc[df_editado.index, colunas_validas] = df_editado[colunas_validas]
 
-        df_para_travar = aplicar_automacao_no_dataframe(df_para_travar, nome_memoria)
+        df_para_travar = aplicar_automacao_no_dataframe(
+            df_para_travar, nome_memoria, df_anterior=df_estado_anterior
+        )
         st.session_state[nome_memoria] = df_para_travar
 
         total_travado = 0

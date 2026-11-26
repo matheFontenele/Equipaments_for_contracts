@@ -80,6 +80,15 @@ if "df_relatorio" not in st.session_state:
         for aba in nomes_abas_memoria:
             st.session_state[aba] = pd.DataFrame()
 
+# Sessões abertas durante a atualização já têm as abas montadas sem as colunas
+# de classificação. Adiciona as colunas vazias sem descartar o trabalho da tela.
+for _aba in nomes_abas_memoria:
+    _df_aba = st.session_state.get(_aba)
+    if isinstance(_df_aba, pd.DataFrame) and not _df_aba.empty:
+        for _col in ("IS_KIT", "IS_AVULSO"):
+            if _col not in _df_aba.columns:
+                st.session_state[_aba][_col] = None
+
 # =======================================================================
 # 🔄 MENU LATERAL (SIDEBAR)
 # =======================================================================
@@ -142,7 +151,18 @@ def _configuracao_colunas(aba):
         "EQUIPAMENTO_NOME": st.column_config.TextColumn("EQUIPAMENTO_NOME", disabled=True),
         "CONTRACT_ID": st.column_config.TextColumn("CONTRACT_ID", disabled=True),
         "CONTRACT_ITEM_ID": st.column_config.TextColumn("CONTRACT_ITEM_ID", disabled=True),
-        "TIPO_EQUIPAMENTO": st.column_config.TextColumn("TIPO_EQUIPAMENTO", disabled=True),
+        "IS_EXTRA_KIT": st.column_config.CheckboxColumn(
+            "IS_EXTRA_KIT",
+            help="Item extra/kit fora do escopo do contrato.",
+        ),
+        "IS_KIT": st.column_config.CheckboxColumn(
+            "IS_KIT",
+            help="Marca o equipamento como kit.",
+        ),
+        "IS_AVULSO": st.column_config.CheckboxColumn(
+            "IS_AVULSO",
+            help="Marca o equipamento como avulso.",
+        ),
     }
     return configuracao
 

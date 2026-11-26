@@ -89,7 +89,93 @@ def obter_itens_do_contrato(aba, contrato_bruto, dict_mestre=None):
 
     return sorted({item_info["apelido_original"] for item_info in dict_mestre[chave_contrato]["itens"].values()})
 
-def aplicar_automacao_no_dataframe(df_aba, aba, dict_mestre=None):
+# Colunas de classificação preenchidas pelo usuário na tabela.
+COLUNAS_FLAGS = ("IS_EXTRA_KIT", "IS_KIT", "IS_AVULSO")
+# Flags que são zeradas ("Não") quando um item de contrato é escolhido.
+FLAGS_ZERADAS_COM_ITEM = ("IS_EXTRA_KIT", "IS_AVULSO")
+
+def _flag_para_bool(valor):
+    """Converte o valor da célula (checkbox/Sim/Não/vazio) em True/False/None."""
+    if valor is None:
+        return None
+    if isinstance(valor, (bool, np.bool_)):
+        return bool(valor)
+    try:
+        if pd.isna(valor):
+            return None
+    except (TypeError, ValueError):
+        return None
+    if isinstance(valor, (int, float)):
+        return bool(valor) if int(valor) in (0, 1) else None
+    texto = str(valor).strip().upper()
+    if texto in {"SIM", "S", "TRUE", "1", "YES"}:
+        return True
+    if texto in {"NAO", "NÃO", "N", "FALSE", "0", "NO"}:
+        return False
+    return None
+
+def _serie_flag(serie):
+    return serie.map(_flag_para_bool) if serie is not None else None
+
+def _serie_preenchida(serie):
+    if serie is None:
+        return None
+    return serie.notna() & (serie.astype(str).str.strip() != "")
+
+def aplicar_regras_flags(df_novo, df_anterior=None):
+    """Regras de IS_EXTRA_KIT / IS_KIT / IS_AVULSO.
+
+    1. Ao escolher um item de contrato, ``IS_EXTRA_KIT`` e ``IS_AVULSO``
+       passam para "Não" (False).
+    2. Se depois o usuário mudar ``IS_EXTRA_KIT`` ou ``IS_AVULSO`` para "Não"
+       (vindo de "Sim"/vazio), o item de contrato é apagado:
+       ``ITEM_DO_CONTRATO`` e ``CONTRACT_ITEM_ID`` recebem ``None``.
+
+    ``df_anterior`` é o estado da tabela antes da edição; sem ele (carga
+    inicial/batch) só a regra 1 é aplicada a linhas ainda sem valor.
+    """
+    if df_novo is None or df_novo.empty:
+        return df_novo
+
+    df_novo = df_novo.copy()
+    for col in COLUNAS_FLAGS:
+        if col not in df_novo.columns:
+            df_novo[col] = None
+
+    anterior = None
+    if df_anterior is not None and not df_anterior.empty:
+        anterior = df_anterior.reindex(df_novo.index)
+
+    # Regra 2: usuário mudou uma flag para "Não" -> apaga item e ID oficial.
+    if anterior is not None:
+        for col in FLAGS_ZERADAS_COM_ITEM:
+            if col not in anterior.columns:
+                continue
+            antes = _serie_flag(anterior[col])
+            agora = _serie_flag(df_novo[col])
+            virou_nao = (agora == False) & (antes != False)
+            if virou_nao.any():
+                df_novo.loc[virou_nao, "ITEM_DO_CONTRATO"] = None
+                df_novo.loc[virou_nao, "CONTRACT_ITEM_ID"] = None
+
+    # Regra 1 (evento): item passou de vazio para preenchido.
+    item_agora = _serie_preenchida(df_novo["ITEM_DO_CONTRATO"])
+    item_antes = _serie_preenchida(anterior.get("ITEM_DO_CONTRATO")) if anterior is not None else None
+    if item_antes is not None:
+        setou_item = item_agora & ~item_antes
+    else:
+        # Sem estado anterior, só define o "Não" onde a flag ainda não existe.
+        setou_item = item_agora
+        for col in FLAGS_ZERADAS_COM_ITEM:
+            setou_item = setou_item & df_novo[col].isna()
+
+    if setou_item.any():
+        for col in FLAGS_ZERADAS_COM_ITEM:
+            df_novo.loc[setou_item, col] = False
+
+    return df_novo
+
+def aplicar_automacao_no_dataframe(df_aba, aba, dict_mestre=None, df_anterior=None):
     """
     Valida as escolhas do usuário/IA e preenche as colunas oficiais de ID do banco de dados 
     (CONTRACT_ID e CONTRACT_ITEM_ID) em tempo real, usando apenas os contratos
@@ -97,10 +183,14 @@ def aplicar_automacao_no_dataframe(df_aba, aba, dict_mestre=None):
     """
     if dict_mestre is None:
         dict_mestre = st.session_state.get("dict_mestre", {}).get(aba, {})
-    if df_aba is None or df_aba.empty or not dict_mestre:
+    if df_aba is None or df_aba.empty:
         return df_aba
+    if not dict_mestre:
+        return aplicar_regras_flags(df_aba, df_anterior)
 
-    df_aba = df_aba.copy()
+    # Regras de IS_EXTRA_KIT/IS_KIT/IS_AVULSO antes da validação: podem
+    # limpar ITEM_DO_CONTRATO (e o CONTRACT_ITEM_ID é recalculado abaixo).
+    df_aba = aplicar_regras_flags(df_aba, df_anterior)
 
     def validar_e_preencher(row):
         contrato_atual = row.get("CONTRATO")
@@ -158,7 +248,7 @@ def montar_colunas_base(df_bruto, aba, existente=None):
     df_montado['ORGAO_ID'] = df_bruto['orgao_id'].apply(valor_seguro_para_texto)
 
     # Substituímos as colunas legadas pelo CONTRACT_ITEM_ID
-    colunas_restantes = ["CONTRACT_ID", "CONTRATO", "CONTRACT_ITEM_ID", "ITEM_DO_CONTRATO", "TIPO_EQUIPAMENTO", "IS_EXTRA_KIT"]
+    colunas_restantes = ["CONTRACT_ID", "CONTRATO", "CONTRACT_ITEM_ID", "ITEM_DO_CONTRATO", *COLUNAS_FLAGS]
     for col in colunas_restantes:
         df_montado[col] = None
 
@@ -171,6 +261,16 @@ def montar_colunas_base(df_bruto, aba, existente=None):
             map_item = df_existente.dropna(subset=['ITEM_DO_CONTRATO']).set_index('EQUIPAMENTO_ID')['ITEM_DO_CONTRATO'].to_dict()
             df_montado['CONTRATO'] = df_montado['EQUIPAMENTO_ID'].map(map_contrato).replace({np.nan: None})
             df_montado['ITEM_DO_CONTRATO'] = df_montado['EQUIPAMENTO_ID'].map(map_item).replace({np.nan: None})
+            for col in COLUNAS_FLAGS:
+                if col not in df_existente.columns:
+                    continue
+                mapa_flag = (
+                    df_existente.dropna(subset=[col])
+                    .set_index('EQUIPAMENTO_ID')[col]
+                    .to_dict()
+                )
+                if mapa_flag:
+                    df_montado[col] = df_montado['EQUIPAMENTO_ID'].map(mapa_flag).replace({np.nan: None})
 
     return df_montado
 
