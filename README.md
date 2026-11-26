@@ -221,8 +221,11 @@ Regras aplicadas em `services/dictionary_service.py:aplicar_regras_flags`, chama
 
 1. Quando `ITEM_DO_CONTRATO` passa de vazio para preenchido, `IS_EXTRA_KIT` e `IS_AVULSO` viram `Nao` automaticamente.
 2. Se depois o usuario mudar `IS_EXTRA_KIT` ou `IS_AVULSO` para `Nao` (vindo de `Sim`), `ITEM_DO_CONTRATO` e `CONTRACT_ITEM_ID` sao apagados (`None`).
+3. Quando `IS_AVULSO` esta marcado (`Sim`), `CONTRATO`, `CONTRACT_ID`, `ITEM_DO_CONTRATO` e `CONTRACT_ITEM_ID` ficam `None`: o equipamento permanece apenas vinculado ao cliente (aparece no grupo `SEM CONTRATO DEFINIDO`).
 
-Sao regras de evento, nao invariantes: dependem do estado anterior da linha (`df_anterior`). Na carga inicial e no batch, sem estado anterior, apenas a regra 1 e aplicada e somente onde a flag ainda esta vazia, para nao sobrescrever classificacoes ja existentes.
+`IS_EXTRA_KIT` nao altera contrato nem item: o kit continua no grupo do proprio contrato, apenas com a caixa marcada. Por isso nao existe mais o painel separado "Extra Itens".
+
+As regras 1 e 2 sao de evento e dependem do estado anterior da linha (`df_anterior`). A regra 3 e invariante: vale em qualquer chamada das regras (carga, edicao, batch). Na carga inicial e no batch, sem estado anterior, apenas a regra 1 e aplicada e somente onde a flag ainda esta vazia, para nao sobrescrever classificacoes ja existentes.
 
 `TIPO_EQUIPAMENTO` nao existe mais na tabela nem nos Parquets.
 

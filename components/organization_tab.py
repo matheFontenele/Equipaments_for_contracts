@@ -1,5 +1,4 @@
 import streamlit as st
-import pandas as pd
 import numpy as np
 from utils.text_processing import normalizar, limpar_filtro, slugify_key
 from services.dictionary_service import obter_itens_do_contrato, aplicar_automacao_no_dataframe
@@ -10,7 +9,8 @@ def renderizar_aba_organizacao(nome_memoria, configuracao_colunas_base, opcoes_c
     df_aba_atual = st.session_state[nome_memoria]
     # Snapshot do estado antes das edições desta execução: permite detectar
     # quando o usuário muda IS_EXTRA_KIT/IS_AVULSO para "Não" (o item de
-    # contrato deve ser apagado).
+    # contrato deve ser apagado) e quando marca IS_AVULSO (contrato e item
+    # são apagados; sobra só o cliente).
     df_estado_anterior = df_aba_atual.copy()
     qtd_travados = len(obter_ids_travados(nome_memoria))
 
@@ -46,16 +46,10 @@ def renderizar_aba_organizacao(nome_memoria, configuracao_colunas_base, opcoes_c
         return
 
     # ----------------------------------------------------------------
-    # 🔍 SEPARAÇÃO COMPONENTE: ITENS REGULARES VS ITENS EXTRAS
+    # 🔍 LISTAGEM (kits continuam no grupo do próprio contrato)
     # ----------------------------------------------------------------
-    if "IS_EXTRA_KIT" in df_visivel.columns:
-        df_extras = df_visivel[df_visivel["IS_EXTRA_KIT"] == True].copy()
-        df_visivel = df_visivel[df_visivel["IS_EXTRA_KIT"] != True].copy()
-    else:
-        df_extras = pd.DataFrame()
-
     if termo_busca and not df_visivel.empty:
-        st.caption(f"🔎 Mostrando {len(df_visivel)} equipamento(s) regulares para o filtro '{termo_busca}'.")
+        st.caption(f"🔎 Mostrando {len(df_visivel)} equipamento(s) para o filtro '{termo_busca}'.")
 
     # ----------------------------------------------------------------
     # AGRUPAMENTO E RENDERIZAÇÃO DA LISTAGEM PADRÃO
@@ -169,41 +163,28 @@ def renderizar_aba_organizacao(nome_memoria, configuracao_colunas_base, opcoes_c
                         # não o rascunho cru do editor.
                         df_editado_grupo = st.session_state[nome_memoria].loc[df_editado_grupo.index]
                         
-                    contrato_arquivo = "SEM CONTRATO" if grupo == SEM_CONTRATO else grupo
-                    qtd_travada = travar_grupo(nome_memoria, contrato_arquivo, df_editado_grupo)
+                    # Depois das regras o contrato pode ter sido limpo (avulso):
+                    # separa por contrato atual para o nome do Parquet refletir
+                    # o que está gravado.
+                    contratos_lock = (
+                        df_editado_grupo["CONTRATO"]
+                        .replace(r"^\s*$", np.nan, regex=True)
+                        .fillna("SEM CONTRATO")
+                    )
+                    qtd_travada = 0
+                    for contrato_lock, indices_lock in contratos_lock.groupby(
+                        contratos_lock
+                    ).groups.items():
+                        qtd_travada += travar_grupo(
+                            nome_memoria,
+                            contrato_lock,
+                            df_editado_grupo.loc[indices_lock],
+                        )
                     st.success(f"🔒 {qtd_travada} equipamento(s) travado(s) e salvos em Parquet!")
                     st.rerun()
 
-    # ----------------------------------------------------------------
-    # 📦 PAINEL ISOLADO: EXTRA ITENS (ITENS EXTRAS) - AGORA EDITÁVEL
-    # ----------------------------------------------------------------
-    if not df_extras.empty:
-        st.markdown("<br><br>", unsafe_allow_html=True)
-        st.markdown("### 📦 Extra Itens (Fora do Escopo do Contrato)")
-        st.info("Estes equipamentos pertencem a categorias de Kit (Monitores, Estabilizadores, etc.), porém os contratos selecionados não possuem esses itens previstos em contrato. Você pode editá-los manualmente aqui.")
-        
-        # A coluna IS_EXTRA_KIT fica visível: desmarcar ("Não") devolve o
-        # equipamento à lista principal e apaga o item de contrato (regra 2).
-        df_extras_exibicao = df_extras.copy()
-        
-        df_extras_editado = st.data_editor(
-            df_extras_exibicao,
-            key=f"editor_extras_{nome_memoria}",
-            width="stretch",
-            column_config=configuracao_colunas_base
-        )
-        partes_editadas.append(df_extras_editado)
-        
-        # Se o utilizador alterar o contrato ou remover o status de extra
-        if not df_extras_editado.equals(df_extras_exibicao):
-            df_aba_atual.loc[df_extras_editado.index, df_extras_editado.columns] = df_extras_editado
-            st.session_state[nome_memoria] = aplicar_automacao_no_dataframe(
-                df_aba_atual, nome_memoria, df_anterior=df_estado_anterior
-            )
-            st.rerun()
-
-    # Ação em lote da organização: consolida as edições dos grupos e de Extra
-    # Itens, atualiza os IDs oficiais e trava todos os equipamentos pendentes.
+    # Ação em lote da organização: consolida as edições dos grupos, atualiza
+    # os IDs oficiais e trava todos os equipamentos pendentes.
     st.divider()
     total_pendente = len(df_aba_atual)
     if st.button(

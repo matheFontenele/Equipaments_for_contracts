@@ -130,6 +130,14 @@ def aplicar_regras_flags(df_novo, df_anterior=None):
     2. Se depois o usuário mudar ``IS_EXTRA_KIT`` ou ``IS_AVULSO`` para "Não"
        (vindo de "Sim"/vazio), o item de contrato é apagado:
        ``ITEM_DO_CONTRATO`` e ``CONTRACT_ITEM_ID`` recebem ``None``.
+    3. ``IS_AVULSO`` marcado ("Sim") desliga o equipamento do contrato:
+       ``CONTRATO``, ``CONTRACT_ID``, ``ITEM_DO_CONTRATO`` e
+       ``CONTRACT_ITEM_ID`` recebem ``None`` — sobra só o vínculo com o
+       cliente. É invariante: vale em qualquer chamada das regras (carga,
+       edição, batch), sem depender de ``df_anterior``.
+
+    ``IS_EXTRA_KIT`` não mexe em contrato/item: o kit permanece no grupo do
+    contrato, apenas com a caixa marcada.
 
     ``df_anterior`` é o estado da tabela antes da edição; sem ele (carga
     inicial/batch) só a regra 1 é aplicada a linhas ainda sem valor.
@@ -172,6 +180,16 @@ def aplicar_regras_flags(df_novo, df_anterior=None):
     if setou_item.any():
         for col in FLAGS_ZERADAS_COM_ITEM:
             df_novo.loc[setou_item, col] = False
+
+    # Regra 3: avulso fica atrelado apenas ao cliente.
+    avulso_agora = _serie_flag(df_novo["IS_AVULSO"])
+    if avulso_agora is not None:
+        eh_avulso = avulso_agora == True
+        if eh_avulso.any():
+            df_novo.loc[
+                eh_avulso,
+                ["CONTRATO", "CONTRACT_ID", "ITEM_DO_CONTRATO", "CONTRACT_ITEM_ID"],
+            ] = None
 
     return df_novo
 
