@@ -210,12 +210,11 @@ Como o casamento mudou, lotes gravados antes desta regra podem continuar com o c
 
 ### Classificacao de kit e avulso
 
-A tabela de cada organizacao tem tres colunas marcaveis (`Sim` = marcado), editaveis pelo usuario:
+A tabela de cada organizacao tem duas colunas marcaveis (`Sim` = marcado), editaveis pelo usuario:
 
 | Coluna | Significado |
 | --- | --- |
-| `IS_KIT` | O equipamento e um kit. Informativo: nao dispara nenhuma regra. |
-| `IS_EXTRA_KIT` | Item extra, fora do escopo do contrato. |
+| `IS_EXTRA_KIT` | O equipamento e um kit ou item extra, fora do escopo do contrato. |
 | `IS_AVULSO` | Equipamento vendido avulso. |
 
 Regras aplicadas em `services/dictionary_service.py:aplicar_regras_flags`, chamada por `aplicar_automacao_no_dataframe`:
@@ -336,7 +335,6 @@ CONTRACT_ID
 CONTRATO
 ITEM_DO_CONTRATO
 IS_EXTRA_KIT
-IS_KIT
 IS_AVULSO
 DESCRICAO_ITEM
 QUANTIDADE_ITEM_NO_CONTRATO

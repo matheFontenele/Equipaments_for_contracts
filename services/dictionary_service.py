@@ -90,7 +90,7 @@ def obter_itens_do_contrato(aba, contrato_bruto, dict_mestre=None):
     return sorted({item_info["apelido_original"] for item_info in dict_mestre[chave_contrato]["itens"].values()})
 
 # Colunas de classificação preenchidas pelo usuário na tabela.
-COLUNAS_FLAGS = ("IS_EXTRA_KIT", "IS_KIT", "IS_AVULSO")
+COLUNAS_FLAGS = ("IS_EXTRA_KIT", "IS_AVULSO")
 # Flags que são zeradas ("Não") quando um item de contrato é escolhido.
 FLAGS_ZERADAS_COM_ITEM = ("IS_EXTRA_KIT", "IS_AVULSO")
 
@@ -123,7 +123,7 @@ def _serie_preenchida(serie):
     return serie.notna() & (serie.astype(str).str.strip() != "")
 
 def aplicar_regras_flags(df_novo, df_anterior=None):
-    """Regras de IS_EXTRA_KIT / IS_KIT / IS_AVULSO.
+    """Regras de IS_EXTRA_KIT / IS_AVULSO.
 
     1. Ao escolher um item de contrato, ``IS_EXTRA_KIT`` e ``IS_AVULSO``
        passam para "Não" (False).
@@ -188,7 +188,7 @@ def aplicar_automacao_no_dataframe(df_aba, aba, dict_mestre=None, df_anterior=No
     if not dict_mestre:
         return aplicar_regras_flags(df_aba, df_anterior)
 
-    # Regras de IS_EXTRA_KIT/IS_KIT/IS_AVULSO antes da validação: podem
+    # Regras de IS_EXTRA_KIT/IS_AVULSO antes da validação: podem
     # limpar ITEM_DO_CONTRATO (e o CONTRACT_ITEM_ID é recalculado abaixo).
     df_aba = aplicar_regras_flags(df_aba, df_anterior)
 

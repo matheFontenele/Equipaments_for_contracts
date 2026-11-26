@@ -85,9 +85,10 @@ if "df_relatorio" not in st.session_state:
 for _aba in nomes_abas_memoria:
     _df_aba = st.session_state.get(_aba)
     if isinstance(_df_aba, pd.DataFrame) and not _df_aba.empty:
-        for _col in ("IS_KIT", "IS_AVULSO"):
-            if _col not in _df_aba.columns:
-                st.session_state[_aba][_col] = None
+        if "IS_AVULSO" not in _df_aba.columns:
+            st.session_state[_aba]["IS_AVULSO"] = None
+        if "IS_KIT" in _df_aba.columns:  # coluna removida nesta revisão
+            st.session_state[_aba] = _df_aba.drop(columns=["IS_KIT"])
 
 # =======================================================================
 # 🔄 MENU LATERAL (SIDEBAR)
@@ -153,11 +154,7 @@ def _configuracao_colunas(aba):
         "CONTRACT_ITEM_ID": st.column_config.TextColumn("CONTRACT_ITEM_ID", disabled=True),
         "IS_EXTRA_KIT": st.column_config.CheckboxColumn(
             "IS_EXTRA_KIT",
-            help="Item extra/kit fora do escopo do contrato.",
-        ),
-        "IS_KIT": st.column_config.CheckboxColumn(
-            "IS_KIT",
-            help="Marca o equipamento como kit.",
+            help="Equipamento kit ou item extra fora do escopo do contrato.",
         ),
         "IS_AVULSO": st.column_config.CheckboxColumn(
             "IS_AVULSO",
