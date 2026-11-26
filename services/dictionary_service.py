@@ -2,14 +2,30 @@ import pandas as pd
 import numpy as np
 import streamlit as st
 
-from utils.text_processing import normalizar, valor_seguro_para_texto, tokens_municipio, MAPPINGS
+from utils.text_processing import (
+    normalizar,
+    valor_seguro_para_texto,
+    tokens_municipio,
+    MAPPINGS,
+    aba_da_organizacao,
+)
 from core.database import RELATORIO_BANCO_PATH, buscar_dados_por_orgao
 from services.locking_service import remover_itens_travados
 
-def construir_dicionario_mestre(df_banco):
+def construir_dicionario_mestre(df_banco, aba=None):
+    """Monta o dicionário contrato → itens.
+
+    Com ``aba`` definida, considera apenas os contratos da empresa daquela aba
+    (``contracts.organization_id``). Contratos cujo órgão não pertence a nenhum
+    MAPPING continuam valendo para todas as abas, para não sumirem do sistema.
+    """
     dict_map = {}
     if df_banco is None or df_banco.empty:
         return dict_map
+
+    if aba is not None and "contract_organization_id" in df_banco.columns:
+        abas_do_contrato = df_banco["contract_organization_id"].map(aba_da_organizacao)
+        df_banco = df_banco[(abas_do_contrato == aba) | abas_do_contrato.isna()]
 
     for _, row in df_banco.iterrows():
         # Dados do Contrato
@@ -52,9 +68,16 @@ def construir_dicionario_mestre(df_banco):
             
     return dict_map
 
-def obter_itens_do_contrato(contrato_bruto):
+def construir_dicionarios_por_aba(df_banco):
+    """Um dicionário de contratos por aba — evita que um contrato de outra
+    empresa seja usado e que homônimos ("GABINETE DO PREFEITO" em ALUCOM e
+    MOREIA) colidam na mesma chave."""
+    return {aba: construir_dicionario_mestre(df_banco, aba) for aba in MAPPINGS}
+
+def obter_itens_do_contrato(aba, contrato_bruto, dict_mestre=None):
     """Retorna os nomes dos itens (apelidos) disponíveis para o dropdown do Streamlit."""
-    dict_mestre = st.session_state.get("dict_mestre", {})
+    if dict_mestre is None:
+        dict_mestre = st.session_state.get("dict_mestre", {}).get(aba, {})
     if not dict_mestre or pd.isna(contrato_bruto) or str(contrato_bruto).strip() == "":
         return []
 
@@ -66,12 +89,14 @@ def obter_itens_do_contrato(contrato_bruto):
 
     return sorted({item_info["apelido_original"] for item_info in dict_mestre[chave_contrato]["itens"].values()})
 
-def aplicar_automacao_no_dataframe(df_aba):
+def aplicar_automacao_no_dataframe(df_aba, aba, dict_mestre=None):
     """
     Valida as escolhas do usuário/IA e preenche as colunas oficiais de ID do banco de dados 
-    (CONTRACT_ID e CONTRACT_ITEM_ID) em tempo real.
+    (CONTRACT_ID e CONTRACT_ITEM_ID) em tempo real, usando apenas os contratos
+    da aba informada.
     """
-    dict_mestre = st.session_state.get("dict_mestre", {})
+    if dict_mestre is None:
+        dict_mestre = st.session_state.get("dict_mestre", {}).get(aba, {})
     if df_aba is None or df_aba.empty or not dict_mestre:
         return df_aba
 
@@ -123,7 +148,7 @@ def aplicar_automacao_no_dataframe(df_aba):
 
     return df_aba
 
-def montar_colunas_base(df_bruto, aba):
+def montar_colunas_base(df_bruto, aba, existente=None):
     df_montado = pd.DataFrame()
     df_montado['CLIENTE_ID'] = df_bruto['id_cliente'].apply(valor_seguro_para_texto)
     df_montado['CLIENTE_NOME'] = df_bruto['nome_cliente'].apply(valor_seguro_para_texto)
@@ -137,8 +162,10 @@ def montar_colunas_base(df_bruto, aba):
     for col in colunas_restantes:
         df_montado[col] = None
 
-    if aba in st.session_state and not st.session_state[aba].empty:
-        df_existente = st.session_state[aba]
+    if existente is None:
+        existente = st.session_state.get(aba)
+    if existente is not None and not existente.empty:
+        df_existente = existente
         if 'EQUIPAMENTO_ID' in df_existente.columns:
             map_contrato = df_existente.dropna(subset=['CONTRATO']).set_index('EQUIPAMENTO_ID')['CONTRATO'].to_dict()
             map_item = df_existente.dropna(subset=['ITEM_DO_CONTRATO']).set_index('EQUIPAMENTO_ID')['ITEM_DO_CONTRATO'].to_dict()
@@ -147,22 +174,27 @@ def montar_colunas_base(df_bruto, aba):
 
     return df_montado
 
-def construir_tabela_organizacao(df_bruto, aba):
-    df_montado = montar_colunas_base(df_bruto, aba)
-    df_montado = aplicar_automacao_no_dataframe(df_montado)
-    df_montado = remover_itens_travados(df_montado, aba)
+def construir_tabela_organizacao(df_bruto, aba, dict_mestre=None, existente=None,
+                                 ids_travados=None):
+    df_montado = montar_colunas_base(df_bruto, aba, existente=existente)
+    df_montado = aplicar_automacao_no_dataframe(df_montado, aba, dict_mestre=dict_mestre)
+    df_montado = remover_itens_travados(df_montado, aba, ids_travados=ids_travados)
     return df_montado
 
-def sincronizar_todas_as_abas(engine_relatorio):
+def sincronizar_todas_as_abas(engine_relatorio, dicts_por_aba=None):
     """
     Busca os dados de equipamentos na fonte do Relatório Base e monta as abas.
     """
+    if dicts_por_aba is None:
+        dicts_por_aba = st.session_state.get("dict_mestre") or {}
     lista_dfs_brutos = []
     for aba, lista_ids in MAPPINGS.items():
         df_bruto = buscar_dados_por_orgao(engine_relatorio, lista_ids)
         df_bruto['aba_origem'] = aba
         lista_dfs_brutos.append(df_bruto)
-        st.session_state[aba] = construir_tabela_organizacao(df_bruto, aba)
+        st.session_state[aba] = construir_tabela_organizacao(
+            df_bruto, aba, dict_mestre=dicts_por_aba.get(aba)
+        )
 
     if lista_dfs_brutos:
         df_relatorio = pd.concat(lista_dfs_brutos, ignore_index=True)

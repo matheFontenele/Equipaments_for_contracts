@@ -38,20 +38,27 @@ def obter_ids_travados(aba):
         st.session_state[chave] = ids
     return st.session_state[chave]
 
-def remover_itens_travados(df, aba):
+def remover_itens_travados(df, aba, ids_travados=None):
     if df is None or df.empty:
         return df
-    ids_travados = obter_ids_travados(aba)
+    if ids_travados is None:
+        ids_travados = obter_ids_travados(aba)
     if not ids_travados:
         return df
     return df[~df["EQUIPAMENTO_ID"].astype(str).isin(ids_travados)].reset_index(drop=True)
 
-def travar_grupo(aba, contrato_texto, df_grupo_atual):
-    if df_grupo_atual.empty:
+def gravar_grupo(aba, contrato_texto, df_grupo_atual):
+    """Grava um grupo em Parquet sem depender do estado da sessão Streamlit.
+
+    É o núcleo reutilizado pelo fluxo interativo (``travar_grupo``) e pelo
+    batch headless (``batch_parquets.py``).
+    """
+    if df_grupo_atual is None or df_grupo_atual.empty:
         return 0
 
+    os.makedirs(PASTA_LOCKS, exist_ok=True)
     agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    total_travado = 0
+    total_gravado = 0
 
     for cliente_id, df_cliente in df_grupo_atual.groupby("CLIENTE_ID"):
         if df_cliente.empty:
@@ -80,7 +87,16 @@ def travar_grupo(aba, contrato_texto, df_grupo_atual):
                 pass
 
         df_para_salvar.to_parquet(caminho, index=False)
-        total_travado += len(df_cliente)
+        total_gravado += len(df_cliente)
+
+    return total_gravado
+
+
+def travar_grupo(aba, contrato_texto, df_grupo_atual):
+    if df_grupo_atual is None or df_grupo_atual.empty:
+        return 0
+
+    total_travado = gravar_grupo(aba, contrato_texto, df_grupo_atual)
 
     ids_travados = set(df_grupo_atual["EQUIPAMENTO_ID"].astype(str))
     st.session_state[aba] = st.session_state[aba][~st.session_state[aba]["EQUIPAMENTO_ID"].astype(str).isin(ids_travados)].reset_index(drop=True)

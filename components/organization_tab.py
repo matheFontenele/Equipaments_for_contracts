@@ -71,7 +71,7 @@ def renderizar_aba_organizacao(nome_memoria, configuracao_colunas_base, opcoes_c
             df_grupo = df_visivel[df_visivel['_GRUPO_CONTRATO'] == grupo].drop(columns=['_GRUPO_CONTRATO'])
             
             # Adicionamos a opção vazia ("") no dropdown dos itens
-            opcoes_item_grupo = [""] if grupo == SEM_CONTRATO else [""] + obter_itens_do_contrato(grupo)
+            opcoes_item_grupo = [""] if grupo == SEM_CONTRATO else [""] + obter_itens_do_contrato(nome_memoria, grupo)
             titulo_grupo = SEM_CONTRATO if grupo == SEM_CONTRATO else f"📄 {grupo}"
 
             with st.expander(f"{titulo_grupo}  —  {len(df_grupo)} equipamento(s)", expanded=True):
@@ -125,31 +125,34 @@ def renderizar_aba_organizacao(nome_memoria, configuracao_colunas_base, opcoes_c
                 # AÇÕES DOS BOTÕES
                 # ------------------------------------------------------------
                 if clicou_ia:
-                    motor = MotorDeRegras(opcoes_contratos, st.session_state["dict_mestre"])
+                    motor = MotorDeRegras(
+                        opcoes_contratos,
+                        st.session_state["dict_mestre"].get(nome_memoria, {}),
+                    )
                     novas_colunas = df_editado_grupo.apply(motor.processar_linha, axis=1)
                     df_editado_grupo['CONTRATO'] = novas_colunas[0]
                     df_editado_grupo['ITEM_DO_CONTRATO'] = novas_colunas[1]
                     
                     # Atualiza diretamente via IA
                     df_aba_atual.loc[df_editado_grupo.index, df_editado_grupo.columns] = df_editado_grupo
-                    st.session_state[nome_memoria] = aplicar_automacao_no_dataframe(df_aba_atual)
+                    st.session_state[nome_memoria] = aplicar_automacao_no_dataframe(df_aba_atual, nome_memoria)
                     st.rerun()
 
                 if clicou_limpar:
                     df_aba_atual.loc[df_editado_grupo.index, ['CONTRATO', 'ITEM_DO_CONTRATO', 'CONTRACT_ID', 'CONTRACT_ITEM_ID']] = None
-                    st.session_state[nome_memoria] = aplicar_automacao_no_dataframe(df_aba_atual)
+                    st.session_state[nome_memoria] = aplicar_automacao_no_dataframe(df_aba_atual, nome_memoria)
                     st.rerun()
 
                 if clicou_atualizar:
                     # Salva APENAS as modificações manuais deste contrato no banco de memória
                     df_aba_atual.loc[df_editado_grupo.index, df_editado_grupo.columns] = df_editado_grupo
-                    st.session_state[nome_memoria] = aplicar_automacao_no_dataframe(df_aba_atual)
+                    st.session_state[nome_memoria] = aplicar_automacao_no_dataframe(df_aba_atual, nome_memoria)
                     st.rerun()
 
                 if clicou_travar:
                     if houve_edicao_manual:
                         df_aba_atual.loc[df_editado_grupo.index, df_editado_grupo.columns] = df_editado_grupo
-                        st.session_state[nome_memoria] = aplicar_automacao_no_dataframe(df_aba_atual)
+                        st.session_state[nome_memoria] = aplicar_automacao_no_dataframe(df_aba_atual, nome_memoria)
                         
                     contrato_arquivo = "SEM CONTRATO" if grupo == SEM_CONTRATO else grupo
                     qtd_travada = travar_grupo(nome_memoria, contrato_arquivo, df_editado_grupo)
@@ -177,7 +180,7 @@ def renderizar_aba_organizacao(nome_memoria, configuracao_colunas_base, opcoes_c
         # Se o utilizador alterar o contrato ou remover o status de extra
         if not df_extras_editado.equals(df_extras_exibicao):
             df_aba_atual.loc[df_extras_editado.index, df_extras_editado.columns] = df_extras_editado
-            st.session_state[nome_memoria] = aplicar_automacao_no_dataframe(df_aba_atual)
+            st.session_state[nome_memoria] = aplicar_automacao_no_dataframe(df_aba_atual, nome_memoria)
             st.rerun()
 
     # Ação em lote da organização: consolida as edições dos grupos e de Extra
@@ -198,7 +201,7 @@ def renderizar_aba_organizacao(nome_memoria, configuracao_colunas_base, opcoes_c
             if colunas_validas:
                 df_para_travar.loc[df_editado.index, colunas_validas] = df_editado[colunas_validas]
 
-        df_para_travar = aplicar_automacao_no_dataframe(df_para_travar)
+        df_para_travar = aplicar_automacao_no_dataframe(df_para_travar, nome_memoria)
         st.session_state[nome_memoria] = df_para_travar
 
         total_travado = 0

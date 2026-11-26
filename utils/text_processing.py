@@ -21,6 +21,20 @@ MAPPINGS = {
 
 nomes_abas_memoria = list(MAPPINGS.keys())
 
+# Cada aba é uma empresa (órgão "dono"); um contrato só pode ser usado na aba
+# da empresa à qual ele pertence (contracts.organization_id). Sem essa
+# restrição, um cliente homônimo de outra aba "herda" o contrato errado — por
+# exemplo, a URBANTECH da MOREIA recebia o contrato da IP SERVIÇOS.
+ABA_POR_ORGAO = {orgao: aba for aba, orgaos in MAPPINGS.items() for orgao in orgaos}
+
+
+def aba_da_organizacao(orgao_id):
+    """Aba dona do órgão, ou ``None`` quando o órgão não está em nenhum MAPPING."""
+    try:
+        return ABA_POR_ORGAO.get(int(orgao_id))
+    except (TypeError, ValueError):
+        return None
+
 # ==============================================================================
 # FUNÇÕES DE TRATAMENTO DE TEXTO
 # ==============================================================================

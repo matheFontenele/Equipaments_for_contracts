@@ -9,7 +9,7 @@ from core.database import (
     testar_conexao_relatorio,
 )
 from utils.text_processing import MAPPINGS, nomes_abas_memoria
-from services.dictionary_service import construir_dicionario_mestre
+from services.dictionary_service import construir_dicionarios_por_aba
 from components.organization_tab import renderizar_aba_organizacao
 from components.parquet_tab import renderizar_arquivos_parquet
 
@@ -35,9 +35,23 @@ if "df_contratos_banco" not in st.session_state:
             f"para o host/porta corretos.\n\nDetalhe: {e}"
         )
 
-if "dict_mestre" not in st.session_state:
-    # Cria a árvore de relacionamentos de altíssima performance
-    st.session_state["dict_mestre"] = construir_dicionario_mestre(st.session_state["df_contratos_banco"])
+def _dict_mestre_por_aba_atual(dict_atual):
+    """True quando o dicionário já está no formato {aba: {contrato: dados}}."""
+    if not isinstance(dict_atual, dict) or not dict_atual:
+        return True
+    if set(dict_atual.keys()) != set(MAPPINGS.keys()):
+        return False
+    return not any("nome_original" in valor for valor in dict_atual.values())
+
+
+if "dict_mestre" not in st.session_state or not _dict_mestre_por_aba_atual(
+    st.session_state.get("dict_mestre")
+):
+    # Um dicionário de contratos por aba: cada empresa só usa os próprios
+    # contratos (ver utils.text_processing.ABA_POR_ORGAO).
+    st.session_state["dict_mestre"] = construir_dicionarios_por_aba(
+        st.session_state["df_contratos_banco"]
+    )
 
 # Orquestração do Relatório Base local (Equipamentos do Legado)
 if "df_relatorio" not in st.session_state:
@@ -96,23 +110,29 @@ if st.sidebar.button("🔌 Testar conexão da base"):
 # =======================================================================
 # ⚙️ CONFIGURAÇÃO DE UI E COLUNAS DA TABELA
 # =======================================================================
-opcoes_contratos = []
-if "dict_mestre" in st.session_state and st.session_state["dict_mestre"]:
-    # Busca dinamicamente todos os nomes reais de contrato disponíveis no dicionário
-    opcoes_contratos = sorted([dados["nome_original"] for dados in st.session_state["dict_mestre"].values()])
+# Cada aba só oferece os contratos da própria empresa; sem isso, um cliente
+# com nome homônimo em outra aba herdava o contrato errado.
+def _opcoes_contratos_da_aba(aba):
+    dict_aba = st.session_state.get("dict_mestre", {}).get(aba) or {}
+    return sorted({dados["nome_original"] for dados in dict_aba.values()})
+
 
 # Atualizado com as colunas reais e oficiais para o Script de Migração
-configuracao_colunas_base = {
-    "CONTRATO": st.column_config.SelectboxColumn("CONTRATO", options=opcoes_contratos),
-    "CLIENTE_ID": st.column_config.TextColumn("CLIENTE_ID", disabled=True),
-    "CLIENTE_NOME": st.column_config.TextColumn("CLIENTE_NOME", disabled=True),
-    "EQUIPAMENTO_ID": st.column_config.TextColumn("EQUIPAMENTO_ID", disabled=True),
-    "TOMBO": st.column_config.TextColumn("TOMBO", disabled=True),
-    "EQUIPAMENTO_NOME": st.column_config.TextColumn("EQUIPAMENTO_NOME", disabled=True),
-    "CONTRACT_ID": st.column_config.TextColumn("CONTRACT_ID", disabled=True),
-    "CONTRACT_ITEM_ID": st.column_config.TextColumn("CONTRACT_ITEM_ID", disabled=True),
-    "TIPO_EQUIPAMENTO": st.column_config.TextColumn("TIPO_EQUIPAMENTO", disabled=True)
-}
+def _configuracao_colunas(aba):
+    configuracao = {
+        "CONTRATO": st.column_config.SelectboxColumn(
+            "CONTRATO", options=_opcoes_contratos_da_aba(aba)
+        ),
+        "CLIENTE_ID": st.column_config.TextColumn("CLIENTE_ID", disabled=True),
+        "CLIENTE_NOME": st.column_config.TextColumn("CLIENTE_NOME", disabled=True),
+        "EQUIPAMENTO_ID": st.column_config.TextColumn("EQUIPAMENTO_ID", disabled=True),
+        "TOMBO": st.column_config.TextColumn("TOMBO", disabled=True),
+        "EQUIPAMENTO_NOME": st.column_config.TextColumn("EQUIPAMENTO_NOME", disabled=True),
+        "CONTRACT_ID": st.column_config.TextColumn("CONTRACT_ID", disabled=True),
+        "CONTRACT_ITEM_ID": st.column_config.TextColumn("CONTRACT_ITEM_ID", disabled=True),
+        "TIPO_EQUIPAMENTO": st.column_config.TextColumn("TIPO_EQUIPAMENTO", disabled=True),
+    }
+    return configuracao
 
 # =======================================================================
 # 🖥️ RENDERIZAÇÃO DA PÁGINA (TABS)
@@ -128,7 +148,11 @@ abas_ui = st.tabs([
 # Renderização das Abas de Organização (0 a 3)
 for idx_ui, nome_memoria in enumerate(nomes_abas_memoria):
     with abas_ui[idx_ui]:
-        renderizar_aba_organizacao(nome_memoria, configuracao_colunas_base, opcoes_contratos)
+        renderizar_aba_organizacao(
+            nome_memoria,
+            _configuracao_colunas(nome_memoria),
+            _opcoes_contratos_da_aba(nome_memoria),
+        )
 
 # Tab 4: Tabela com o resultado da Query do banco novo
 with abas_ui[4]:

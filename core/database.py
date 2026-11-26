@@ -169,6 +169,7 @@ def carregar_contratos_do_banco(engine_novo):
             cus.alias AS cutomer_name,
             con.id AS contract_id,
             con.name AS contract_name,
+            con.organization_id AS contract_organization_id,
             coi.id AS contract_item_id,
             coi.alias AS contract_item_alias,
             coi.quantity,
