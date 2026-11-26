@@ -44,14 +44,26 @@ def _dict_mestre_por_aba_atual(dict_atual):
     return not any("nome_original" in valor for valor in dict_atual.values())
 
 
-if "dict_mestre" not in st.session_state or not _dict_mestre_por_aba_atual(
-    st.session_state.get("dict_mestre")
+# Bump ao mudar a lógica de casamento de contratos: força a reconstrução do
+# dicionário e das abas em sessões que ficaram abertas durante a atualização.
+REVISAO_CASAMENTO_CONTRATOS = 2
+
+if (
+    "dict_mestre" not in st.session_state
+    or not _dict_mestre_por_aba_atual(st.session_state.get("dict_mestre"))
+    or st.session_state.get("_revisao_casamento_contratos")
+    != REVISAO_CASAMENTO_CONTRATOS
 ):
     # Um dicionário de contratos por aba: cada empresa só usa os próprios
     # contratos (ver utils.text_processing.ABA_POR_ORGAO).
     st.session_state["dict_mestre"] = construir_dicionarios_por_aba(
         st.session_state["df_contratos_banco"]
     )
+    st.session_state["_revisao_casamento_contratos"] = REVISAO_CASAMENTO_CONTRATOS
+    # Remonta as abas com o novo dicionário (contratos de outra aba caem).
+    st.session_state.pop("df_relatorio", None)
+    for _aba in nomes_abas_memoria:
+        st.session_state.pop(_aba, None)
 
 # Orquestração do Relatório Base local (Equipamentos do Legado)
 if "df_relatorio" not in st.session_state:
