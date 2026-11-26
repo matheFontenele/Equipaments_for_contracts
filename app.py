@@ -44,6 +44,25 @@ def _dict_mestre_por_aba_atual(dict_atual):
     return not any("nome_original" in valor for valor in dict_atual.values())
 
 
+def _dict_sem_numero_contrato(dict_atual):
+    """True quando algum nó de contrato do dicionário não tem ``numero``.
+
+    Sessões abertas antes desta revisão foram montadas com um dicionário sem
+    ``contracts.number``. Nesse caso o dicionário é reidratado, mas as abas e
+    as edições da tela são preservadas (não se mexe em ``df_relatorio`` nem
+    nas abas).
+    """
+    if not isinstance(dict_atual, dict):
+        return False
+    for contratos in dict_atual.values():
+        if not isinstance(contratos, dict):
+            continue
+        for info in contratos.values():
+            if isinstance(info, dict) and "nome_original" in info and "numero" not in info:
+                return True
+    return False
+
+
 # Bump ao mudar a lógica de casamento de contratos: força a reconstrução do
 # dicionário e das abas em sessões que ficaram abertas durante a atualização.
 REVISAO_CASAMENTO_CONTRATOS = 2
@@ -64,6 +83,27 @@ if (
     st.session_state.pop("df_relatorio", None)
     for _aba in nomes_abas_memoria:
         st.session_state.pop(_aba, None)
+
+# Sessões abertas durante esta atualização ainda têm o dicionário sem o número
+# do contrato (e/ou o DataFrame de contratos sem a coluna contract_number).
+# Reidrata só o dicionário, sem descartar as abas nem as edições da tela.
+_df_contratos = st.session_state.get("df_contratos_banco")
+_recarregar_contratos = (
+    isinstance(_df_contratos, pd.DataFrame)
+    and not _df_contratos.empty
+    and "contract_number" not in _df_contratos.columns
+)
+if _recarregar_contratos:
+    try:
+        st.session_state["df_contratos_banco"] = carregar_contratos_do_banco(engine_novo)
+        _df_contratos = st.session_state["df_contratos_banco"]
+    except Exception:
+        _recarregar_contratos = False
+
+if _recarregar_contratos or _dict_sem_numero_contrato(
+    st.session_state.get("dict_mestre")
+):
+    st.session_state["dict_mestre"] = construir_dicionarios_por_aba(_df_contratos)
 
 # Orquestração do Relatório Base local (Equipamentos do Legado)
 if "df_relatorio" not in st.session_state:

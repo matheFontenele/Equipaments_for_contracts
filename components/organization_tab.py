@@ -1,7 +1,11 @@
 import streamlit as st
 import numpy as np
 from utils.text_processing import normalizar, limpar_filtro, slugify_key
-from services.dictionary_service import obter_itens_do_contrato, aplicar_automacao_no_dataframe
+from services.dictionary_service import (
+    obter_itens_do_contrato,
+    numero_do_contrato,
+    aplicar_automacao_no_dataframe,
+)
 from services.locking_service import obter_ids_travados, travar_grupo
 from services.rules_engine import MotorDeRegras
 
@@ -70,7 +74,11 @@ def renderizar_aba_organizacao(nome_memoria, configuracao_colunas_base, opcoes_c
             
             # Adicionamos a opção vazia ("") no dropdown dos itens
             opcoes_item_grupo = [""] if grupo == SEM_CONTRATO else [""] + obter_itens_do_contrato(nome_memoria, grupo)
-            titulo_grupo = SEM_CONTRATO if grupo == SEM_CONTRATO else f"📄 {grupo}"
+            if grupo == SEM_CONTRATO:
+                titulo_grupo = SEM_CONTRATO
+            else:
+                numero_grupo = numero_do_contrato(nome_memoria, grupo)
+                titulo_grupo = f"📄 {numero_grupo} - {grupo}" if numero_grupo else f"📄 {grupo}"
 
             with st.expander(f"{titulo_grupo}  —  {len(df_grupo)} equipamento(s)", expanded=True):
                 config_grupo = dict(configuracao_colunas_base)

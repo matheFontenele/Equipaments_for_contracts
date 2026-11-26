@@ -204,6 +204,7 @@ Cada aba representa uma empresa (`ALUCOM`, `IP SERVICOS`, `MOREIA`, `AS SISTEMAS
 - `core/database.py` carrega `con.organization_id AS contract_organization_id`.
 - `utils/text_processing.py` mantem `ABA_POR_ORGAO` e `aba_da_organizacao()`.
 - `services/dictionary_service.py` monta um dicionario por aba (`construir_dicionarios_por_aba`); o motor de regras, os seletores de contrato/item e o preenchimento de `CONTRACT_ID`/`CONTRACT_ITEM_ID` usam apenas o dicionario da aba.
+- Cada grupo de contrato na listagem mostra o numero do contrato (`contracts.number`) antes do nome, no titulo do expander: `📄 11/2022-04 - CONTROLADORIA GERAL`. O numero vem do no do dicionario (`numero`, via `numero_do_contrato`).
 - Contratos cujo `organization_id` nao esteja em nenhum `MAPPING` continuam disponiveis em todas as abas, para nao desaparecerem do sistema.
 
 Como o casamento mudou, lotes gravados antes desta regra podem continuar com o contrato antigo. Rode `python batch_parquets.py --limpar` (quando aplicavel) ou use a aba `Itens Travados` para destravar e regerar os lotes afetados.

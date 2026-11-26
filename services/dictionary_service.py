@@ -45,6 +45,7 @@ def construir_dicionario_mestre(df_banco, aba=None):
         if c_norm not in dict_map:
             dict_map[c_norm] = {
                 "id": contrato_id,
+                "numero": valor_seguro_para_texto(row.get("contract_number")),
                 "nome_original": contrato_nome,
                 "municipios": set(),
                 "itens": {}
@@ -73,6 +74,35 @@ def construir_dicionarios_por_aba(df_banco):
     empresa seja usado e que homônimos ("GABINETE DO PREFEITO" em ALUCOM e
     MOREIA) colidam na mesma chave."""
     return {aba: construir_dicionario_mestre(df_banco, aba) for aba in MAPPINGS}
+
+def numero_do_contrato(aba, contrato_bruto, dict_mestre=None):
+    """Número de exibição (``contracts.number``) do contrato do grupo.
+
+    Usado no título do expander, antes do nome do contrato. Devolve ``""``
+    quando o contrato não está no dicionário da aba (ou não tem número).
+    """
+    if dict_mestre is None:
+        dict_mestre = st.session_state.get("dict_mestre", {}).get(aba, {})
+    if not dict_mestre or pd.isna(contrato_bruto) or str(contrato_bruto).strip() == "":
+        return ""
+
+    c_norm = normalizar(contrato_bruto)
+    if c_norm in dict_mestre:
+        chave_contrato = c_norm
+    else:
+        # Só aceita casamento por palavra completa: evita exibir o número de
+        # um contrato maior cujo nome apenas começa/termina com o do grupo.
+        chave_contrato = next(
+            (
+                key
+                for key in dict_mestre
+                if key.startswith(c_norm + " ") or c_norm.startswith(key + " ")
+            ),
+            None,
+        )
+    if not chave_contrato:
+        return ""
+    return dict_mestre[chave_contrato].get("numero") or ""
 
 def obter_itens_do_contrato(aba, contrato_bruto, dict_mestre=None):
     """Retorna os nomes dos itens (apelidos) disponíveis para o dropdown do Streamlit."""
