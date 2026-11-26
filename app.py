@@ -186,7 +186,12 @@ for idx_ui, nome_memoria in enumerate(nomes_abas_memoria):
 # Tab 4: Tabela com o resultado da Query do banco novo
 with abas_ui[4]:
     st.info("💡 Dados carregados dinamicamente via JOIN do Banco Novo.")
-    st.dataframe(st.session_state["df_contratos_banco"], width="stretch", height=700)
+    # `available_quantity` segue no dataframe (o dicionário usa como saldo),
+    # mas não é exibido nesta view.
+    df_banco_visivel = st.session_state["df_contratos_banco"].drop(
+        columns=["available_quantity"], errors="ignore"
+    )
+    st.dataframe(df_banco_visivel, width="stretch", height=700)
 
 # Tab 5: Base de Equipamentos e Órgãos (Banco Legado)
 with abas_ui[5]:
