@@ -197,6 +197,17 @@ MAPPING_MOREIA = {...}
 MAPPING_AS = {...}
 ```
 
+### Contratos por empresa (aba)
+
+Cada aba representa uma empresa (`ALUCOM`, `IP SERVICOS`, `MOREIA`, `AS SISTEMAS`). Um contrato do banco novo pertence a uma empresa pelo campo `contracts.organization_id`, e so pode ser usado na aba dessa empresa. Isso evita que um cliente homonimo de outra aba receba o contrato errado — por exemplo, um cliente `URBANTECH` da MOREIA herdando o contrato da IP SERVICOS.
+
+- `core/database.py` carrega `con.organization_id AS contract_organization_id`.
+- `utils/text_processing.py` mantem `ABA_POR_ORGAO` e `aba_da_organizacao()`.
+- `services/dictionary_service.py` monta um dicionario por aba (`construir_dicionarios_por_aba`); o motor de regras, os seletores de contrato/item e o preenchimento de `CONTRACT_ID`/`CONTRACT_ITEM_ID` usam apenas o dicionario da aba.
+- Contratos cujo `organization_id` nao esteja em nenhum `MAPPING` continuam disponiveis em todas as abas, para nao desaparecerem do sistema.
+
+Como o casamento mudou, lotes gravados antes desta regra podem continuar com o contrato antigo. Rode `python batch_parquets.py --limpar` (quando aplicavel) ou use a aba `Itens Travados` para destravar e regerar os lotes afetados.
+
 ## Arquivos de entrada
 
 Os arquivos podem ficar em `docs/` ou, por compatibilidade, na raiz do projeto. Quando houver `.xlsx` e `.csv` com o mesmo nome-base, o `.xlsx` tem prioridade.
